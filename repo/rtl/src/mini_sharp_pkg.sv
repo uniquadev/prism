@@ -9,6 +9,11 @@ package mini_sharp_pkg;
 
   parameter int MINISHARP_OFFSET          = ETH_HDR_BYTES;
 
+  // Mini-Sharp byte order policy:
+  //   - Ethernet header fields keep standard Ethernet/network byte order.
+  //   - All Mini-Sharp custom multi-byte header fields are little-endian.
+  //   - All Mini-Sharp multi-byte payload elements are little-endian.
+
   parameter int CHUNK_ID_OFFSET           = MINISHARP_OFFSET + 0;
   parameter int P_SIZE_OFFSET             = MINISHARP_OFFSET + 4;
   // Revised header layout (breaking change):

@@ -141,7 +141,12 @@ class PCAPGenerator:
             return bytes(payload)
 
         while len(payload) + 4 <= payload_size:
-            payload.extend(struct.pack("!I", value & 0xFFFFFFFF))
+            dtype_obj = getattr(self.args, "dtype", None)
+            dtype_name = getattr(dtype_obj, "name", str(dtype_obj)).upper()
+            if dtype_name == "FP32":
+                payload.extend(struct.pack("<f", float(value)))
+            else:
+                payload.extend(struct.pack("<I", value & 0xFFFFFFFF))
 
         while len(payload) < payload_size:
             payload.append(value & 0xFF)
@@ -154,7 +159,7 @@ class PCAPGenerator:
         if payload_size < 0 or payload_size > 0xFFFFFFFF:
             raise ValueError("payload_size must fit in uint32")
 
-        header = struct.pack("!II", packet_index, payload_size)
+        header = struct.pack("<II", packet_index, payload_size)
         body = bytearray()
         while len(body) < payload_size:
             body.append((value + len(body)) & 0xFF)
@@ -167,7 +172,7 @@ class PCAPGenerator:
         if p_size < 0 or p_size > 0xFFFFFFFF:
             raise ValueError("p_size must fit in uint32")
 
-        return struct.pack("!II", chunk_id, p_size)
+        return struct.pack("<II", chunk_id, p_size)
 
     def _encode_collective_chunk_header(
         self,
@@ -192,8 +197,9 @@ class PCAPGenerator:
 
         reserved = 0
         # New layout: flow_id (H), collective_op (B), op_flags (B), dtype (B), collective_flags (B), reserved (B), expected (H), contribution (H)
+        # Mini-Sharp custom header fields are little-endian.
         return struct.pack(
-            "!HBBBBBHH",
+            "<HBBBBBHH",
             int(flow_id),
             int(collective_op),
             int(op_flags),

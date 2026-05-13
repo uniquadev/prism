@@ -16,7 +16,7 @@ import mini_sharp_pkg::*;
 //
 // Stato attuale:
 //   - DTYPE_INT8: FP32 -> UINT8 saturating.
-//   - DTYPE_FP32: scrittura diretta dei 4 byte FP32.
+//   - DTYPE_FP32: scrittura diretta dei 4 byte FP32 little-endian.
 //   - DTYPE_BF16/DTYPE_FP16: non ancora implementati.
 module reduction_output_converter (
     input  logic [31:0] value_fp32,
@@ -47,11 +47,11 @@ module reduction_output_converter (
       end
 
       DTYPE_FP32: begin
-        // Scrittura network/big-endian nel payload.
-        encoded_bytes[7:0]   = value_fp32[31:24];
-        encoded_bytes[15:8]  = value_fp32[23:16];
-        encoded_bytes[23:16] = value_fp32[15:8];
-        encoded_bytes[31:24] = value_fp32[7:0];
+        // Scrittura little-endian nel payload Mini-Sharp.
+        encoded_bytes[7:0]   = value_fp32[7:0];
+        encoded_bytes[15:8]  = value_fp32[15:8];
+        encoded_bytes[23:16] = value_fp32[23:16];
+        encoded_bytes[31:24] = value_fp32[31:24];
         lane_bytes           = 3'd4;
         data_type_supported  = 1'b1;
       end

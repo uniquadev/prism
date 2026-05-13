@@ -5,7 +5,7 @@
 - **Location**: repo/rtl/src/components/reduction_input_converter.sv
 
 - **Inputs**:
-	- `frame` : packed frame bytes (network/big-endian ordering).
+	- `frame` : packed frame bytes (Mini-Sharp little-endian payload ordering).
 	- `byte_offset` : index into payload (bytes) where the lane starts.
 	- `data_type` : `uint8` — identifies lane width and interpretation (e.g., `DTYPE_INT8`, `DTYPE_FP32`).
 
@@ -16,4 +16,4 @@
 
 - **Semantics & notes**:
 	- The converter assumes `MINISHARP_PAYLOAD_OFFSET` to compute payload start; the caller supplies `byte_offset` relative to the payload start.
-	- Conversion must preserve network (big-endian) byte order when assembling FP32 words from bytes.
+	- Conversion must preserve Mini-Sharp little-endian byte order when assembling FP32 words from bytes.

@@ -16,6 +16,8 @@ PCAP_OUT = "traces/passthrough_out.pcap"
 
 ETHERTYPE_REDUCTION = 0x88B5
 
+# Ethernet fields stay network-order; Mini-Sharp custom fields are little-endian.
+
 ETH_HDR_BYTES = 14
 MINISHARP_HDR_BYTES = 19
 MINISHARP_PAYLOAD_OFFSET = ETH_HDR_BYTES + MINISHARP_HDR_BYTES
@@ -73,8 +75,12 @@ def be16(frame, offset):
     return struct.unpack_from("!H", frame, offset)[0]
 
 
-def be32(frame, offset):
-    return struct.unpack_from("!I", frame, offset)[0]
+def le16(frame, offset):
+    return struct.unpack_from("<H", frame, offset)[0]
+
+
+def le32(frame, offset):
+    return struct.unpack_from("<I", frame, offset)[0]
 
 
 def parse_minisharp_frame(frame):
@@ -83,16 +89,16 @@ def parse_minisharp_frame(frame):
         "dst": frame[0:6],
         "src": frame[6:12],
         "ethertype": be16(frame, 12),
-        "chunk_id": be32(frame, CHUNK_ID_OFFSET),
-        "p_size": be32(frame, P_SIZE_OFFSET),
-        "flow_id": be16(frame, FLOW_ID_OFFSET),
+        "chunk_id": le32(frame, CHUNK_ID_OFFSET),
+        "p_size": le32(frame, P_SIZE_OFFSET),
+        "flow_id": le16(frame, FLOW_ID_OFFSET),
         "op_flags": frame[OP_FLAGS_OFFSET],
         "collective_op": frame[COLLECTIVE_OP_OFFSET],
         "dtype": frame[DTYPE_OFFSET],
         "flags": frame[FLAGS_OFFSET],
         "reserved": frame[RESERVED_OFFSET],
-        "expected_contributions": be16(frame, EXPECTED_OFFSET),
-        "contribution_index": be16(frame, CONTRIB_OFFSET),
+        "expected_contributions": le16(frame, EXPECTED_OFFSET),
+        "contribution_index": le16(frame, CONTRIB_OFFSET),
         "payload": frame[MINISHARP_PAYLOAD_OFFSET:],
     }
 

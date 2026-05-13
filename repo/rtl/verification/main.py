@@ -1,4 +1,7 @@
+
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Lorenzo Cipolletti
 
 import argparse
 import os
@@ -13,25 +16,13 @@ except ModuleNotFoundError:
     from cocotb.runner import get_runner
 
 
-def run_cmd(cmd: list[str], cwd: Path | None = None) -> None:
-    print("[main.py] Running:")
+def run_cmd(cmd, cwd=None):
+    print("[runner] Running:")
     print("  " + " ".join(str(x) for x in cmd))
-
-    subprocess.run(
-        cmd,
-        cwd=str(cwd) if cwd is not None else None,
-        check=True,
-    )
+    subprocess.run(cmd, cwd=str(cwd) if cwd is not None else None, check=True)
 
 
-def traffic_gen_command(traffic_gen_root: Path) -> list[str]:
-    """
-    Prefer uv locally because traffic-gen has its own pyproject.toml and uv.lock.
-
-    Inside Docker we set MINISHARP_USE_SYSTEM_TRAFFIC_GEN=1, so this uses the
-    already-installed system Python packages and avoids mounted .venv/libpython
-    problems.
-    """
+def traffic_gen_command(traffic_gen_root):
     traffic_gen_main = traffic_gen_root / "main.py"
 
     if not traffic_gen_main.exists():
@@ -40,10 +31,7 @@ def traffic_gen_command(traffic_gen_root: Path) -> list[str]:
     use_system_python = os.environ.get("MINISHARP_USE_SYSTEM_TRAFFIC_GEN", "0") == "1"
 
     if use_system_python:
-        return [
-            sys.executable,
-            str(traffic_gen_main),
-        ]
+        return [sys.executable, str(traffic_gen_main)]
 
     if shutil.which("uv") is not None:
         return [
@@ -55,28 +43,49 @@ def traffic_gen_command(traffic_gen_root: Path) -> list[str]:
             str(traffic_gen_main),
         ]
 
-    return [
-        sys.executable,
-        str(traffic_gen_main),
-    ]
+    return [sys.executable, str(traffic_gen_main)]
 
 
-def generate_passthrough_input_pcap(repo_root: Path) -> Path:
-    """
-    Generate the passthrough smoke-test input PCAP by calling repo/traffic-gen.
+def traces_dir_from_env(rtl_root):
+    return rtl_root / Path(os.environ.get("MINISHARP_TRACES_DIR", "verification/traces"))
 
-    Expected traffic:
-      8 reduction packets
-      expected_contributions = 4
 
-    Expected output after RTL reduction:
-      chunk 0: 1 + 2 + 3 + 4 = 10 = 0x0a
-      chunk 1: 5 + 6 + 7 + 8 = 26 = 0x1a
-    """
+def build_dir_from_env():
+    return Path(os.environ.get("MINISHARP_BUILD_DIR", "/tmp/mini-sharp-rtl/sim_build"))
+
+
+def remove_old_output(traces_dir):
+    output_pcap = traces_dir / "passthrough_out.pcap"
+    if output_pcap.exists():
+        output_pcap.unlink()
+
+
+def prepare_build_dir_links(build_dir, traces_dir):
+    build_dir.mkdir(parents=True, exist_ok=True)
+    traces_dir.mkdir(parents=True, exist_ok=True)
+
+    link_path = build_dir / "traces"
+
+    if link_path.is_symlink():
+        link_path.unlink()
+    elif link_path.exists():
+        if link_path.is_dir():
+            shutil.rmtree(link_path)
+        else:
+            link_path.unlink()
+
+    try:
+        link_path.symlink_to(traces_dir, target_is_directory=True)
+        print(f"[runner] Linked {link_path} -> {traces_dir}")
+    except OSError:
+        shutil.copytree(traces_dir, link_path)
+        print(f"[runner] Symlink failed; copied traces to {link_path}")
+
+
+def generate_reduction_test_pcap(repo_root, traces_dir, dtype):
     rtl_root = repo_root / "rtl"
     traffic_gen_root = repo_root / "traffic-gen"
 
-    traces_dir = rtl_root / Path(os.environ.get("MINISHARP_TRACES_DIR", "verification/traces"))
     traces_dir.mkdir(parents=True, exist_ok=True)
 
     pcap_path = traces_dir / "passthrough_in.pcap"
@@ -108,7 +117,7 @@ def generate_passthrough_input_pcap(repo_root: Path) -> Path:
         "--collective-op",
         "REDUCE",
         "--dtype",
-        "INT8",
+        dtype,
 
         "--reduction-payload-size",
         "64",
@@ -125,20 +134,28 @@ def generate_passthrough_input_pcap(repo_root: Path) -> Path:
     ]
 
     run_cmd(cmd, cwd=rtl_root)
-
-    print(f"[main.py] Generated input PCAP through traffic-gen: {pcap_path}")
+    print(f"[runner] Generated {dtype} input PCAP: {pcap_path}")
     return pcap_path
 
 
-def sv_sources(rtl_root: Path) -> list[str]:
-    """
-    Source order matters:
-      package first,
-      components,
-      DUT,
-      vendor PCAP modules,
-      simulation top.
-    """
+def install_custom_input_pcap(input_pcap, traces_dir):
+    if not input_pcap.exists():
+        raise SystemExit(f"Input PCAP not found: {input_pcap}")
+
+    traces_dir.mkdir(parents=True, exist_ok=True)
+
+    dst = traces_dir / "passthrough_in.pcap"
+    shutil.copy2(input_pcap, dst)
+
+    manifest = traces_dir / "passthrough_in.csv"
+    if manifest.exists():
+        manifest.unlink()
+
+    print(f"[runner] Installed custom input PCAP: {input_pcap} -> {dst}")
+    return dst
+
+
+def sv_sources(rtl_root):
     ordered = [
         rtl_root / "src" / "mini_sharp_pkg.sv",
         rtl_root / "src" / "components" / "eth_parser.sv",
@@ -163,82 +180,13 @@ def sv_sources(rtl_root: Path) -> list[str]:
     missing = [path for path in ordered if not path.exists()]
     if missing:
         for path in missing:
-            print(f"[main.py] Missing source: {path}")
+            print(f"[runner] Missing source: {path}")
         raise SystemExit("Missing SystemVerilog source files.")
 
     return [str(path) for path in ordered]
 
 
-def prepare_build_dir_links(build_dir: Path, traces_dir: Path) -> None:
-    """
-    The simulator runs from build_dir.
-
-    The vendor PCAP modules use relative paths:
-      traces/passthrough_in.pcap
-      traces/passthrough_out.pcap
-
-    Therefore build_dir/traces must resolve to rtl/traces.
-    """
-    build_dir.mkdir(parents=True, exist_ok=True)
-    traces_dir.mkdir(parents=True, exist_ok=True)
-
-    link_path = build_dir / "traces"
-
-    if link_path.is_symlink():
-        link_path.unlink()
-    elif link_path.exists():
-        if link_path.is_dir():
-            shutil.rmtree(link_path)
-        else:
-            link_path.unlink()
-
-    try:
-        link_path.symlink_to(traces_dir, target_is_directory=True)
-        print(f"[main.py] Linked {link_path} -> {traces_dir}")
-    except OSError:
-        # Fallback. This is less ideal because output PCAP may stay in build_dir,
-        # but on Linux/Docker/WSL the symlink path should normally work.
-        shutil.copytree(traces_dir, link_path)
-        print(f"[main.py] Symlink failed; copied traces to {link_path}")
-
-
-def run_passthrough(args: argparse.Namespace) -> None:
-    verification_root = Path(__file__).resolve().parent
-    rtl_root = verification_root.parent
-    repo_root = rtl_root.parent
-
-    os.chdir(rtl_root)
-
-    traces_dir = rtl_root / Path(os.environ.get("MINISHARP_TRACES_DIR", "verification/traces"))
-    traces_dir.mkdir(parents=True, exist_ok=True)
-
-    output_pcap = traces_dir / "passthrough_out.pcap"
-
-    if output_pcap.exists():
-        try:
-            output_pcap.unlink()
-        except PermissionError as exc:
-            raise SystemExit(
-                "\n"
-                f"ERROR: cannot remove existing output PCAP:\n"
-                f"  {output_pcap}\n\n"
-                "This usually means the file is open in Wireshark or locked by Windows/OneDrive.\n"
-                "Close Wireshark and remove it with:\n\n"
-                "  powershell.exe -NoProfile -Command "
-                f"\"Remove-Item -LiteralPath '{output_pcap}' -Force\"\n\n"
-                "Or remove the entire traces directory from WSL with:\n\n"
-                "  powershell.exe -NoProfile -Command "
-                "\"Remove-Item -LiteralPath '$(wslpath -w traces)' -Recurse -Force\"\n"
-            ) from exc
-
-    generate_passthrough_input_pcap(repo_root)
-
-    build_dir = Path(
-        os.environ.get("MINISHARP_BUILD_DIR", "/tmp/mini-sharp-rtl/sim_build")
-    ).resolve()
-
-    prepare_build_dir_links(build_dir, traces_dir)
-
+def build_sim(rtl_root, build_dir, waves, always, clean_build):
     runner = get_runner("verilator")
 
     build_args = [
@@ -260,7 +208,7 @@ def run_passthrough(args: argparse.Namespace) -> None:
         "-Wno-EOFNEWLINE",
     ]
 
-    if args.waves:
+    if waves:
         build_args.extend(["--trace", "--trace-structs"])
 
     runner.build(
@@ -268,17 +216,16 @@ def run_passthrough(args: argparse.Namespace) -> None:
         hdl_toplevel="tb_mini_sharp_switch_core",
         build_dir=str(build_dir),
         build_args=build_args,
-        always=args.always,
-        clean=args.clean_build,
+        always=always,
+        clean=clean_build,
     )
 
-    # Recreate link after build in case build directory was cleaned/recreated.
-    prepare_build_dir_links(build_dir, traces_dir)
+    return runner
 
-    # Ensure the verification package is importable by cocotb (tests live in
-    # rtl/verification/tests). Add verification directory to Python
-    # search path and PYTHONPATH so cocotb can import `tests`.
+
+def configure_pythonpath(rtl_root):
     verification_dir = rtl_root / "verification"
+
     if str(verification_dir) not in sys.path:
         sys.path.insert(0, str(verification_dir))
 
@@ -288,32 +235,126 @@ def run_passthrough(args: argparse.Namespace) -> None:
         + os.environ.get("PYTHONPATH", "")
     )
 
+
+def run_cocotb_entrypoint(runner, build_dir, test_module):
     runner.test(
         hdl_toplevel="tb_mini_sharp_switch_core",
-        test_module="tests.test_passthrough_pcap",
+        test_module=test_module,
         test_dir=str(build_dir),
     )
 
-    print(f"[main.py] Build dir:   {build_dir}")
-    print(f"[main.py] Input PCAP:  {traces_dir / 'passthrough_in.pcap'}")
-    print(f"[main.py] Output PCAP: {traces_dir / 'passthrough_out.pcap'}")
+
+def run_regression_suite(args):
+    verification_root = Path(__file__).parent
+    rtl_root = verification_root.parent
+    repo_root = rtl_root.parent
+
+    os.chdir(rtl_root)
+
+    traces_dir = traces_dir_from_env(rtl_root)
+    build_dir = build_dir_from_env()
+
+    prepare_build_dir_links(build_dir, traces_dir)
+
+    runner = build_sim(
+        rtl_root=rtl_root,
+        build_dir=build_dir,
+        waves=args.waves,
+        always=args.always,
+        clean_build=args.clean_build,
+    )
+
+    prepare_build_dir_links(build_dir, traces_dir)
+    configure_pythonpath(rtl_root)
+
+    # INT8 regression.
+    remove_old_output(traces_dir)
+    generate_reduction_test_pcap(repo_root, traces_dir, dtype="INT8")
+
+    run_cocotb_entrypoint(
+        runner=runner,
+        build_dir=build_dir,
+        test_module="tests.test_passthrough_pcap",
+    )
+
+    # FP32 regression.
+    remove_old_output(traces_dir)
+    generate_reduction_test_pcap(repo_root, traces_dir, dtype="FP32")
+
+    run_cocotb_entrypoint(
+        runner=runner,
+        build_dir=build_dir,
+        test_module="tests.test_reduce_sum_fp32_pcap",
+    )
+
+    print(f"[runner] Build dir:   {build_dir}")
+    print(f"[runner] Last input:  {traces_dir / 'passthrough_in.pcap'}")
+    print(f"[runner] Last output: {traces_dir / 'passthrough_out.pcap'}")
 
 
-def build_parser() -> argparse.ArgumentParser:
+def run_custom_pcap(args):
+    verification_root = Path(__file__).parent
+    rtl_root = verification_root.parent
+
+    os.chdir(rtl_root)
+
+    if args.input_pcap is None:
+        raise SystemExit("--input-pcap is required for --test run_pcap")
+
+    input_pcap = Path(args.input_pcap).absolute()
+    output_pcap = Path(args.output_pcap or "out.pcap").absolute()
+
+    traces_dir = traces_dir_from_env(rtl_root)
+    build_dir = build_dir_from_env()
+
+    remove_old_output(traces_dir)
+    install_custom_input_pcap(input_pcap, traces_dir)
+    prepare_build_dir_links(build_dir, traces_dir)
+
+    runner = build_sim(
+        rtl_root=rtl_root,
+        build_dir=build_dir,
+        waves=args.waves,
+        always=args.always,
+        clean_build=args.clean_build,
+    )
+
+    prepare_build_dir_links(build_dir, traces_dir)
+    configure_pythonpath(rtl_root)
+
+    run_cocotb_entrypoint(
+        runner=runner,
+        build_dir=build_dir,
+        test_module="tests.run_pcap_driver",
+    )
+
+    produced = traces_dir / "passthrough_out.pcap"
+
+    if not produced.exists():
+        raise SystemExit(f"Expected DUT output PCAP not found: {produced}")
+
+    output_pcap.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(produced, output_pcap)
+
+    print(f"[runner] Build dir:       {build_dir}")
+    print(f"[runner] Custom input:    {input_pcap}")
+    print(f"[runner] Raw output PCAP: {produced}")
+    print(f"[runner] Copied output:   {output_pcap}")
+
+
+def build_parser():
     parser = argparse.ArgumentParser(description="Mini-Sharp RTL simulation runner")
 
     parser.add_argument(
         "--test",
-        choices=["passthrough"],
-        default="passthrough",
-        help="Test to run.",
+        choices=["tests", "passthrough", "run_pcap"],
+        default="tests",
+        help="Flow to run.",
     )
 
-    parser.add_argument(
-        "--waves",
-        action="store_true",
-        help="Enable Verilator waveform tracing.",
-    )
+    parser.add_argument("--input-pcap", help="Input PCAP for --test run_pcap.")
+    parser.add_argument("--output-pcap", help="Output PCAP path for --test run_pcap.")
+    parser.add_argument("--waves", action="store_true", help="Enable waveform tracing.")
 
     parser.add_argument(
         "--always",
@@ -338,12 +379,14 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main():
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.test == "passthrough":
-        run_passthrough(args)
+    if args.test in ("tests", "passthrough"):
+        run_regression_suite(args)
+    elif args.test == "run_pcap":
+        run_custom_pcap(args)
     else:
         raise SystemExit(f"Unsupported test: {args.test}")
 

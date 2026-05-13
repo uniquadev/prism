@@ -497,11 +497,12 @@ module collective_engine #(
             out_frame[8*(ETH_SRC_OFFSET + 5) +: 8] <= SWITCH_MAC[7:0];
           end
 
-          out_frame[8*(FLOW_ID_OFFSET + 0) +: 8] <= pending_flow_id[15:8];
-          out_frame[8*(FLOW_ID_OFFSET + 1) +: 8] <= pending_flow_id[7:0];
+          // Mini-Sharp emitted header fields are little-endian.
+          out_frame[8*(FLOW_ID_OFFSET + 0) +: 8] <= pending_flow_id[7:0];
+          out_frame[8*(FLOW_ID_OFFSET + 1) +: 8] <= pending_flow_id[15:8];
 
-          out_frame[8*(EXPECTED_CONTRIB_OFFSET + 0) +: 8] <= 8'h00;
-          out_frame[8*(EXPECTED_CONTRIB_OFFSET + 1) +: 8] <= 8'h01;
+          out_frame[8*(EXPECTED_CONTRIB_OFFSET + 0) +: 8] <= 8'h01;
+          out_frame[8*(EXPECTED_CONTRIB_OFFSET + 1) +: 8] <= 8'h00;
 
           out_frame[8*(CONTRIBUTION_INDEX_OFFSET + 0) +: 8] <= 8'h00;
           out_frame[8*(CONTRIBUTION_INDEX_OFFSET + 1) +: 8] <= 8'h00;

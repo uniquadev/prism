@@ -1,4 +1,14 @@
-# Mini-Sharp packet format (updated)
+# Mini-Sharp packet format
+
+## Byte order policy
+
+The Ethernet header keeps standard Ethernet/network byte order.
+
+All Mini-Sharp custom multi-byte header fields are encoded little-endian.
+
+All Mini-Sharp multi-byte payload elements are encoded little-endian.
+
+Single-byte fields such as `collective_op`, `op_flags`, `data_type`, `collective_flags`, `reserved`, and `DTYPE_INT8` payload elements have no byte-order ambiguity. (updated)
 
 Ethernet header: 14 bytes.
 

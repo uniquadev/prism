@@ -33,23 +33,23 @@ module minisharp_parser #(
 
   always_comb begin
     chunk_id = {
-      frame[8*(CHUNK_ID_OFFSET + 0) +: 8],
-      frame[8*(CHUNK_ID_OFFSET + 1) +: 8],
+      frame[8*(CHUNK_ID_OFFSET + 3) +: 8],
       frame[8*(CHUNK_ID_OFFSET + 2) +: 8],
-      frame[8*(CHUNK_ID_OFFSET + 3) +: 8]
+      frame[8*(CHUNK_ID_OFFSET + 1) +: 8],
+      frame[8*(CHUNK_ID_OFFSET + 0) +: 8]
     };
 
     p_size = {
-      frame[8*(P_SIZE_OFFSET + 0) +: 8],
-      frame[8*(P_SIZE_OFFSET + 1) +: 8],
+      frame[8*(P_SIZE_OFFSET + 3) +: 8],
       frame[8*(P_SIZE_OFFSET + 2) +: 8],
-      frame[8*(P_SIZE_OFFSET + 3) +: 8]
+      frame[8*(P_SIZE_OFFSET + 1) +: 8],
+      frame[8*(P_SIZE_OFFSET + 0) +: 8]
     };
 
-    // flow_id is new in the header (2 bytes)
+    // flow_id is encoded little-endian in the Mini-Sharp header.
     flow_id = {
-      frame[8*(FLOW_ID_OFFSET + 0) +: 8],
-      frame[8*(FLOW_ID_OFFSET + 1) +: 8]
+      frame[8*(FLOW_ID_OFFSET + 1) +: 8],
+      frame[8*(FLOW_ID_OFFSET + 0) +: 8]
     };
 
     // `op_flags` è un singolo byte che contiene informazioni specifiche
@@ -62,13 +62,13 @@ module minisharp_parser #(
     reserved         = frame[8*RESERVED_OFFSET +: 8];
 
     expected_contributions = {
-      frame[8*(EXPECTED_CONTRIB_OFFSET + 0) +: 8],
-      frame[8*(EXPECTED_CONTRIB_OFFSET + 1) +: 8]
+      frame[8*(EXPECTED_CONTRIB_OFFSET + 1) +: 8],
+      frame[8*(EXPECTED_CONTRIB_OFFSET + 0) +: 8]
     };
 
     contribution_index = {
-      frame[8*(CONTRIBUTION_INDEX_OFFSET + 0) +: 8],
-      frame[8*(CONTRIBUTION_INDEX_OFFSET + 1) +: 8]
+      frame[8*(CONTRIBUTION_INDEX_OFFSET + 1) +: 8],
+      frame[8*(CONTRIBUTION_INDEX_OFFSET + 0) +: 8]
     };
 
     required_len = MINISHARP_PAYLOAD_OFFSET + p_size;

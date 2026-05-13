@@ -1,15 +1,14 @@
 #!/bin/bash
 uv run main.py pcap-generate \
-  --output traces/mix_reduce_sum.pcap \
-  --manifest traces/mix_reduce_sum.csv \
-  --reduction-packets 64 \
-  --normal-packets 16 \
+  --output traces/mix_reduce_sum_fp32.pcap \
+  --manifest traces/mix_reduce_sum_fp32.csv \
+  --reduction-packets 8 \
+  --normal-packets 2 \
   --expected-contributions 4 \
   --no-shuffle \
   --reduce-operation SUM \
   --collective-op REDUCE \
-  --dtype INT8 \
+  --dtype FP32 \
   --vary-sources \
-  --source-hosts 8 \
-  --retimestamp-after-shuffle \
+  --source-hosts 4 \
   --seed 42

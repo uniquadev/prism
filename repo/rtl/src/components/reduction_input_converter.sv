@@ -15,11 +15,11 @@ import mini_sharp_pkg::*;
 //   Converte una lane del payload Mini-Sharp nel formato interno FP32.
 //
 // Convenzione byte FP32:
-//   Per DTYPE_FP32 il payload viene interpretato in ordine network/big-endian:
-//     byte 0 -> bit [31:24]
-//     byte 1 -> bit [23:16]
-//     byte 2 -> bit [15:8]
-//     byte 3 -> bit [7:0]
+//   Per DTYPE_FP32 il payload Mini-Sharp è little-endian:
+//     byte 0 -> bit [7:0]
+//     byte 1 -> bit [15:8]
+//     byte 2 -> bit [23:16]
+//     byte 3 -> bit [31:24]
 //
 // Stato attuale:
 //   - DTYPE_INT8: 1 byte, interpretato come unsigned per compatibilità col test.
@@ -61,10 +61,10 @@ module reduction_input_converter #(
 
       DTYPE_FP32: begin
         sample_fp32 = {
-          frame[8*(MINISHARP_PAYLOAD_OFFSET + byte_offset + 0) +: 8],
-          frame[8*(MINISHARP_PAYLOAD_OFFSET + byte_offset + 1) +: 8],
+          frame[8*(MINISHARP_PAYLOAD_OFFSET + byte_offset + 3) +: 8],
           frame[8*(MINISHARP_PAYLOAD_OFFSET + byte_offset + 2) +: 8],
-          frame[8*(MINISHARP_PAYLOAD_OFFSET + byte_offset + 3) +: 8]
+          frame[8*(MINISHARP_PAYLOAD_OFFSET + byte_offset + 1) +: 8],
+          frame[8*(MINISHARP_PAYLOAD_OFFSET + byte_offset + 0) +: 8]
         };
         lane_bytes          = 3'd4;
         data_type_supported = 1'b1;

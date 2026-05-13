@@ -10,7 +10,7 @@
 
 - **Outputs (names and widths)**:
   - `valid_minisharp` : `logic` — header present and frame long enough.
-  - `chunk_id` : `uint32` — chunk index (network/big-endian assembled).
+  - `chunk_id` : `uint32` — chunk index (little-endian assembled).
   - `p_size`   : `uint32` — payload size in bytes.
   - `flow_id`  : `uint16` — flow identifier (new, used as part of context key).
   - `operation_id` : `uint16` — zero-extended `op_flags` (compat shim for existing decoders).
