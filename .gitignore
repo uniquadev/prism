@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Verilator / build artifacts
+/tmp/mini-sharp-rtl/
+build/
+dump.vcd
+dump.fst
+
+# Traces
+repo/rtl/traces/
+
+# Editor
+.vscode/
+*.swp
+.agents/

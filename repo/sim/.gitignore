@@ -1,0 +1,21 @@
+simulation
+*.log
+*.o
+*.out
+*.a
+*.so
+*.dylib
+build/
+
+# Temporary files
+*.tmp
+*.swp
+*.bak
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

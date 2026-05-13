@@ -1,0 +1,14 @@
+[project]
+name = "mini-sharp-rtl"
+version = "0.1.0"
+description = "Mini-Sharp RTL simulation and cocotb verification environment"
+requires-python = ">=3.12"
+dependencies = [
+    "cocotb>=1.9,<2.0",
+    "scapy>=2.5.0",
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["cocotb_tests"]
+python_files = ["test_*.py"]
