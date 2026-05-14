@@ -9,35 +9,6 @@
 
 import mini_sharp_pkg::*;
 
-// Modulo: collective_engine
-//
-// Descrizione:
-//   Motore di riduzione per pacchetti Mini-Sharp. Il modulo mantiene contesti
-//   indicizzati da (flow_id, chunk_id), accumula i contributi ricevuti e produce
-//   un frame ridotto quando il chunk è completo.
-//
-// Nota protocollo:
-//   - flow_id identifica il flow/collective.
-//   - op_flags contiene l'operatore REDUCE, ad esempio REDUCE_OP_SUM.
-//   - collective_op indica il tipo di collective, ad esempio COLLECTIVE_REDUCE.
-//
-// FSM:
-//   STATE_IDLE:
-//     valida metadati, cerca/alloca il contesto e prepara i registri pending_*.
-//     Transita a STATE_LANE_READ solo se il contesto è stato trovato/allocato.
-//
-//   STATE_LANE_READ:
-//     cattura la lane corrente del payload e l'accumulatore FP32 corrente.
-//
-//   STATE_LANE_EXEC:
-//     registra il risultato della fp32_alu.
-//
-//   STATE_LANE_WRITE:
-//     aggiorna acc_fp32 e, se il chunk è completo, scrive la lane nel frame
-//     di uscita.
-//
-//   STATE_EMIT:
-//     emette il frame ridotto e libera il contesto.
 module collective_engine #(
     parameter int MAX_PACKET_BYTES  = 2048,
     parameter int PAYLOAD_MAX_BYTES = 1024,

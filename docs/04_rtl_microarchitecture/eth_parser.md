@@ -1,19 +1,19 @@
 **Ethernet Parser (eth_parser)**
 
-- **Description**: Combinational extractor for the Ethernet header. It returns destination/source MAC addresses, EtherType, and a validity flag. Used as a fast pre-filter for reduction traffic.
-- **Type**: Combinational
-- **Location**: repo/rtl/src/components/eth_parser.sv
+- **Descrizione**: Estrattore combinazionale dell’header Ethernet. Ritorna MAC di destinazione/sorgente, EtherType e un flag di validità. Usato come filtro veloce per il traffico di riduzione.
+- **Tipo**: Combinazionale
+- **Posizione**: repo/rtl/src/components/eth_parser.sv
 
-- **Inputs**:
-	- `frame` : packed frame bytes.
-	- `frame_len` : `uint16` — reconstructed frame length in bytes.
+- **Input**:
+	- `frame` : byte del frame impacchettati.
+	- `frame_len` : `uint16` — lunghezza del frame ricostruito in byte.
 
-- **Outputs**:
-	- `dst_mac` : `uint48` — destination MAC from Ethernet header.
-	- `src_mac` : `uint48` — source MAC.
+- **Output**:
+	- `dst_mac` : `uint48` — MAC di destinazione dall’header Ethernet.
+	- `src_mac` : `uint48` — MAC di sorgente.
 	- `ethertype` : `uint16`.
-	- `is_reduction_ethertype` : `logic` — asserted if `ethertype == ETHERTYPE_REDUCTION`.
-	- `valid_eth_frame` : `logic` — true when `frame_len >= ETH_HDR_BYTES`.
+	- `is_reduction_ethertype` : `logic` — alto se `ethertype == ETHERTYPE_REDUCTION`.
+	- `valid_eth_frame` : `logic` — vero quando `frame_len >= ETH_HDR_BYTES`.
 
-- **Usage**:
-	- Instantiated by `mini_sharp_switch_core` as a first-stage filter; if `is_reduction_ethertype` is false the switch typically bypasses the Mini-Sharp parser and forwards the frame.
+- **Uso**:
+	- Instanziato da `mini_sharp_switch_core` come filtro di primo stadio; se `is_reduction_ethertype` è falso lo switch di solito bypassa il parser Mini-Sharp e inoltra il frame.

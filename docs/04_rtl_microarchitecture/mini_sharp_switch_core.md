@@ -1,30 +1,30 @@
 **mini_sharp_switch_core**
 
-- **Description**: Top-level switch core that consumes AXI4-Stream input beats, reconstructs full Ethernet frames, parses headers, and either forwards frames unchanged (bypass) or coordinates reduction processing by `collective_engine`. The module implements an explicit FSM with clear separation of Next-State Logic, State Register, and Output Logic.
-- **Type**: Sequential (FSM)
-- **Location**: repo/rtl/src/top/mini_sharp_switch_core.sv
+- **Descrizione**: Switch core top-level che consuma beat AXI4-Stream, ricostruisce frame Ethernet completi, analizza gli header e inoltra i frame invariati (bypass) oppure coordina la riduzione con `collective_engine`. Il modulo implementa una FSM esplicita con separazione netta tra Next-State Logic, registro di stato e Output Logic.
+- **Tipo**: Sequenziale (FSM)
+- **Posizione**: repo/rtl/src/top/mini_sharp_switch_core.sv
 
-- **Top-level I/O (high-level)**:
-  - Inputs:
-    - `clk`, `rst_n` : clock and active-low reset.
-    - AXI4-Stream input: `in_tdata` (width = `AXIS_WIDTH`), `in_tstrb`, `in_tuser` (contains metadata like src MAC), `in_tvalid`, `in_tlast`, `in_tready` (handshake).
-    - `engine_done_valid`, `engine_out_valid` (from `collective_engine`).
-  - Outputs:
-    - AXI4-Stream output: `out_tdata`, `out_tstrb`, `out_tuser`, `out_tvalid`, `out_tlast`, and `out_tready` (peer backpressure).
+- **I/O top-level (a grandi linee)**:
+  - Input:
+    - `clk`, `rst_n` : clock e reset attivo basso.
+    - AXI4-Stream input: `in_tdata` (larghezza = `AXIS_WIDTH`), `in_tstrb`, `in_tuser` (contiene metadata come src MAC), `in_tvalid`, `in_tlast`, `in_tready` (handshake).
+    - `engine_done_valid`, `engine_out_valid` (da `collective_engine`).
+  - Output:
+    - AXI4-Stream output: `out_tdata`, `out_tstrb`, `out_tuser`, `out_tvalid`, `out_tlast` e `out_tready` (backpressure del peer).
 
-- **Internal instantiations / neighbors**:
-  - `eth_parser` — used to quickly filter frames by EtherType.
-  - `minisharp_parser` — extracts Mini-Sharp header fields (`flow_id`, `op_flags`, etc.).
-  - `collective_engine` — invoked when a supported reduction packet is recognized.
+- **Istanze interne / vicini**:
+  - `eth_parser` — usato per filtrare rapidamente i frame via EtherType.
+  - `minisharp_parser` — estrae i campi dell’header Mini-Sharp (`flow_id`, `op_flags`, ecc.).
+  - `collective_engine` — invocato quando si riconosce un pacchetto di riduzione supportato.
 
-- **FSM (conceptual)**:
-  - `STATE_RX`       : accumulate AXI beats into an internal frame buffer until `in_tlast`.
-  - `STATE_PROCESS`  : run parsers (`eth_parser` + `minisharp_parser`) and decide path.
-  - `STATE_WAIT_ENGINE`: forward frame to `collective_engine` and wait for completion/emit.
-  - `STATE_TX_PREPARE`: prepare outbound frame(s).
-  - `STATE_TX_SEND`  : stream out prepared frames respecting `out_tready`/`out_tlast`.
+- **FSM (concettuale)**:
+  - `STATE_RX`       : accumula i beat AXI in un buffer di frame interno finché non arriva `in_tlast`.
+  - `STATE_PROCESS`  : esegue i parser (`eth_parser` + `minisharp_parser`) e decide il percorso.
+  - `STATE_WAIT_ENGINE`: inoltra il frame a `collective_engine` e aspetta completamento/emissione.
+  - `STATE_TX_PREPARE`: prepara il/i frame in uscita.
+  - `STATE_TX_SEND`  : trasmette i frame preparati rispettando `out_tready`/`out_tlast`.
 
-- **Design notes**:
-  - The module separates: combinational Next-State Logic (compute `next_state`), sequential State Register (`always_ff` updating `state <= next_state`), and Output Logic (combinational outputs derived from state and inputs). This pattern eases formal/sequential reasoning and helps timing closure.
-  - A packet is forwarded to `collective_engine` when `eth_parser.is_reduction_ethertype` && `minisharp_parser.valid_minisharp` && reduction is supported for the parsed fields.
-  - The switch cores rewrite source MAC when `collective_engine` emits a reduced frame; `flow_id` from the parsed header is passed through to the engine and written back into emitted frames to preserve traceability.
+- **Note di design**:
+  - Il modulo separa: Next-State Logic combinazionale (calcola `next_state`), registro di stato sequenziale (`always_ff` che aggiorna `state <= next_state`) e Output Logic (output combinazionali derivati da stato e ingressi). Questo schema facilita la ragionazione formale/sequenziale e aiuta a chiudere timing.
+  - Un pacchetto viene inviato a `collective_engine` quando `eth_parser.is_reduction_ethertype` && `minisharp_parser.valid_minisharp` && la riduzione è supportata per i campi parsati.
+  - Il core riscrive la MAC sorgente quando `collective_engine` emette un frame ridotto; `flow_id` dal header parsato viene passato al motore e riscritto nei frame emessi per mantenere la tracciabilità.

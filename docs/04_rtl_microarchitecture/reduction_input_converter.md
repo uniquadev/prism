@@ -1,19 +1,19 @@
 **Reduction Input Converter**
 
-- **Description**: Small combinational unit that extracts a payload lane from the input frame at a given byte offset and converts it into an internal FP32 sample representation. Supports INT8 and FP32 payload element encodings.
-- **Type**: Combinational
-- **Location**: repo/rtl/src/components/reduction_input_converter.sv
+- **Descrizione**: Piccola unità combinazionale che estrae una lane del payload dal frame di input a un dato offset in byte e la converte in una rappresentazione FP32 interna. Supporta le codifiche payload INT8 e FP32.
+- **Tipo**: Combinazionale
+- **Posizione**: repo/rtl/src/components/reduction_input_converter.sv
 
-- **Inputs**:
-	- `frame` : packed frame bytes (Mini-Sharp little-endian payload ordering).
-	- `byte_offset` : index into payload (bytes) where the lane starts.
-	- `data_type` : `uint8` — identifies lane width and interpretation (e.g., `DTYPE_INT8`, `DTYPE_FP32`).
+- **Input**:
+	- `frame` : byte del frame impacchettati (payload Mini-Sharp in ordine little-endian).
+	- `byte_offset` : indice all’interno del payload (byte) in cui inizia la lane.
+	- `data_type` : `uint8` — identifica larghezza e interpretazione della lane (es. `DTYPE_INT8`, `DTYPE_FP32`).
 
-- **Outputs**:
-	- `sample_fp32` : `uint32` — lane value converted to IEEE-754 FP32 internal representation.
-	- `lane_bytes` : small integer (`3:0` or similar) — number of bytes consumed by the lane.
-	- `data_type_supported` : `logic` — asserted when converter recognizes `data_type`.
+- **Output**:
+	- `sample_fp32` : `uint32` — valore della lane convertito in rappresentazione FP32 IEEE-754 interna.
+	- `lane_bytes` : intero piccolo (`3:0` o simile) — numero di byte consumati dalla lane.
+	- `data_type_supported` : `logic` — alto quando il convertitore riconosce `data_type`.
 
-- **Semantics & notes**:
-	- The converter assumes `MINISHARP_PAYLOAD_OFFSET` to compute payload start; the caller supplies `byte_offset` relative to the payload start.
-	- Conversion must preserve Mini-Sharp little-endian byte order when assembling FP32 words from bytes.
+- **Semantica & note**:
+	- Il convertitore assume `MINISHARP_PAYLOAD_OFFSET` per calcolare l’inizio del payload; il chiamante fornisce il `byte_offset` relativo all’inizio del payload.
+	- La conversione deve preservare l’ordine little-endian di Mini-Sharp quando si assembla una parola FP32 dai byte.

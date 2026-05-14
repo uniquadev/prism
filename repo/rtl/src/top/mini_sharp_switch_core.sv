@@ -70,24 +70,6 @@ module mini_sharp_switch_core #(
   localparam int AXIS_BYTES = AXIS_WIDTH / 8;
 
   // =========================================================================
-  // FSM (dichiarazione e documentazione)
-  // =========================================================================
-  // FSM tipo:
-  //   Macchina sincrona single-process, Moore-like, con transizioni dipendenti
-  //   dagli handshake AXI4-Stream. Le uscite principali sono registrate,
-  //   mentre `in_tready` è derivato combinazionalmente dallo stato corrente.
-  //
-  // Stati:
-  //   STATE_RX: ricostruisce frame dagli beat AXI; transita a STATE_PROCESS
-  //             quando riceve un beat con in_tlast=1.
-  //   STATE_PROCESS: esegue parsing e decide se inviare a collective_engine
-  //                  o preparare il TX in bypass.
-  //   STATE_WAIT_ENGINE: attende `done_valid` dall'engine e riceve frame di
-  //                      uscita via `engine_out_valid`.
-  //   STATE_TX_PREPARE: prepara il beat di uscita corrente (TDATA/TSTRB/TUSER).
-  //   STATE_TX_SEND: manda i beat verso il sink rispettando `out_tready`.
-  // =========================================================================
-  // =========================================================================
   // STATE ENCODING
   // =========================================================================
   typedef enum logic [2:0] {

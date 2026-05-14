@@ -1,17 +1,17 @@
 **Reduction Operation Decoder**
 
-- **Description**: Decodes the protocol-level reduce identifier into a primitive FP32 ALU operation and control signals that indicate whether accumulation and/or finalization are required (e.g., `AVG` requires post-scaling).
-- **Type**: Combinational
-- **Location**: repo/rtl/src/components/reduction_op_decoder.sv
+- **Descrizione**: Decodifica l’identificatore di riduzione a livello di protocollo in un’operazione ALU FP32 primitiva e in segnali di controllo che indicano se serve accumulo e/o finalizzazione (es. `AVG` richiede post-scaling).
+- **Tipo**: Combinazionale
+- **Posizione**: repo/rtl/src/components/reduction_op_decoder.sv
 
-- **Inputs**:
-	- `operation_id` : `uint16` — protocol field carrying the operation (parser zero-extends `op_flags` into this field for compatibility).
+- **Input**:
+	- `operation_id` : `uint16` — campo di protocollo che porta l’operazione (il parser estende a zero `op_flags` in questo campo per compatibilità).
 
-- **Outputs**:
-	- `alu_op` : enumeration indicating the FP32 ALU primitive (SUM, MIN, MAX, etc.).
-	- `accumulation_supported` : `logic` — whether the operation supports accumulation semantics.
-	- `needs_finalization` : `logic` — whether a finalization step (e.g., divide by N for AVG) is required before emitting the reduced value.
+- **Output**:
+	- `alu_op` : enumerazione che indica l’operazione ALU FP32 primitiva (SUM, MIN, MAX, ecc.).
+	- `accumulation_supported` : `logic` — indica se l’operazione supporta la semantica di accumulo.
+	- `needs_finalization` : `logic` — indica se serve un passaggio di finalizzazione (es. dividere per N per AVG) prima di emettere il valore ridotto.
 
-- **Notes**:
-	- Current implementation supports common ops: `SUM`, `MIN`, `MAX`, `AVG`. Additions should ensure the decoder stays purely combinational.
-	- Because `operation_id` is a compatibility shim (parser zero-extends the `op_flags` byte), consider a future refactor to pass `op_flags` explicitly and remove the zero-extension once all modules are updated.
+- **Note**:
+	- L’implementazione corrente supporta operazioni comuni: `SUM`, `MIN`, `MAX`, `AVG`. Le estensioni devono mantenere il decoder puramente combinazionale.
+	- Poiché `operation_id` è uno shim di compatibilità (il parser estende a zero il byte `op_flags`), in futuro conviene passare `op_flags` direttamente e togliere questa estensione una volta aggiornati tutti i moduli.
