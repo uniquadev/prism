@@ -1,14 +1,14 @@
-**Mini-Sharp Parser**
+**Parser Mini-Sharp**
 
 - **Descrizione**: Estrattore combinazionale che decodifica i campi dell’header Mini-Sharp da un frame Ethernet ricostruito. Controlla i bound su `MINISHARP_PAYLOAD_OFFSET` ed espone i campi parsati alla logica a valle.
 - **Tipo**: Combinazionale (senza registri)
 - **Posizione**: repo/rtl/src/components/minisharp_parser.sv
 
-- **Input**:
+- **Ingressi**:
   - `frame` : byte impacchettati, larghezza = `(MAX_PACKET_BYTES*8)` bit — frame ricostruito completo.
   - `frame_len` : `uint16` — lunghezza del frame ricostruito in byte.
 
-- **Output (nomi e larghezze)**:
+- **Uscite (nomi e larghezze)**:
   - `valid_minisharp` : `logic` — header presente e frame sufficientemente lungo.
   - `chunk_id` : `uint32` — indice del chunk (assemblato little-endian).
   - `p_size`   : `uint32` — dimensione del payload in byte.

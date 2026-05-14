@@ -1,5 +1,5 @@
-# Documentation
+# Documentazione
 
-This `docs/` tree contains design notes, protocol description, architecture, verification plan, and results for the Mini-Sharp bachelor thesis project.
+Questo albero `docs/` contiene appunti di design, descrizione del protocollo, architettura, piano di verifica e risultati per il progetto di tesi Mini-Sharp.
 
-See the numbered sections for a guided tour of the repository and design rationale.
+Vedere le sezioni numerate per un tour guidato del repository e della razionale progettuale.

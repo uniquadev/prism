@@ -7,11 +7,5 @@ Funzionalità attuali verificate:
 
 Requisiti funzionali principali:
 
-- Supportare riduzione collettiva su payload INT8 con accumulo FP32.
+- Supportare riduzione collettiva BF16, FP16
 - Interfaccia AXI-stream per ingressi e uscite (pacchetti multi-beat).
-- Ambiente di verifica basato su Cocotb e Verilator.
-
-Funzionalità future (non implementate):
-
-- Supporto nativo per FP32 payload, BF16, FP16.
-- Politiche avanzate per la tabella di contesti (eviction, reorder).

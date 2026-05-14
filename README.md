@@ -51,3 +51,6 @@ repo/rtl/out.pcap
 
 This project uses separate licenses for hardware design files, software tools,
 and documentation. See `LICENSE` and `NOTICE` for details.
+
+## Note
+Expect comments to alternate between English and Italian, reflecting the habit of writing design notes in Italian while using English for code and technical terms.

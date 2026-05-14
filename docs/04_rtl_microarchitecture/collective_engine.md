@@ -1,11 +1,11 @@
-**Collective Engine**
+**Motore collettivo**
 
 - **Descrizione**: Motore di riduzione con stato che mantiene contesti per chunk, raccoglie contributi da più sender e emette un unico pacchetto ridotto quando il contesto è completo. I contesti sono identificati univocamente da `(flow_id, chunk_id)`.
 - **Tipo**: Sequenziale (FSM)
 - **Posizione**: repo/rtl/src/components/collective_engine.sv
 
-- **I/O top-level (nomi e larghezze)**:
-  - Input:
+- **I/O di livello superiore (nomi e larghezze)**:
+  - Ingressi:
     - `clk`, `rst_n` : clock e reset attivo basso.
     - `in_valid` : `logic` — indica che `in_frame`/metadata sono validi.
     - `in_frame` : bit impacchettati che rappresentano il frame Ethernet completo (`(MAX_PACKET_BYTES*8)-1:0`).
@@ -19,7 +19,7 @@
     - `in_collective_flags` : `uint8`.
     - `in_expected_contributions` : `uint16`.
     - `in_contribution_index` : `uint16`.
-  - Output:
+  - Uscite:
     - `done_valid` : `logic` — indica che l’aggiornamento del contesto è avvenuto.
     - `out_valid` : `logic` — indica che `out_frame` contiene un frame ridotto valido.
     - `out_frame` : bit impacchettati (`(MAX_PACKET_BYTES*8)-1:0`) — il frame Ethernet emesso.
@@ -38,6 +38,6 @@
   - La logica combinazionale di next-state è separata dal registro di stato (flip-flop) e dalla logica di output, come previsto dalle linee guida FSM del progetto.
 
 - **Vicini / Connessioni**:
-  - Input: guidato da `mini_sharp_switch_core` quando viene identificato un pacchetto di riduzione supportato.
+  - Ingresso: guidato da `mini_sharp_switch_core` quando viene identificato un pacchetto di riduzione supportato.
   - Usa `reduction_input_converter`, `reduction_op_decoder`, `reduction_output_converter` e `fp32_alu`.
 

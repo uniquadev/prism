@@ -9,36 +9,6 @@
 
 import mini_sharp_pkg::*;
 
-// Modulo: mini_sharp_switch_core
-//
-// Descrizione:
-//   Core RTL di primo livello per il prototipo Mini-Sharp. Il modulo riceve un
-//   frame Ethernet su interfaccia AXI4-Stream, ricostruisce il frame completo,
-//   esegue il parsing Ethernet/Mini-Sharp e decide se inoltrare il frame in
-//   bypass o inviarlo al collective_engine.
-//
-// Nota sulla FSM:
-//   La FSM è implementata come macchina sincrona a singolo processo. Le uscite
-//   principali sono registrate; in_tready è derivato combinazionalmente dallo
-//   stato corrente. È quindi una FSM Moore-like con transizioni dipendenti dagli
-//   handshake AXI4-Stream.
-//
-// Stati:
-//   STATE_RX
-//     Ricostruisce un frame completo a partire dai beat AXI4-Stream di ingresso.
-//
-//   STATE_PROCESS
-//     Usa i parser combinazionali per decidere se il frame è una reduction
-//     Mini-Sharp supportata o se deve essere inoltrato in bypass.
-//
-//   STATE_WAIT_ENGINE
-//     Attende che il collective_engine termini la gestione del frame.
-//
-//   STATE_TX_PREPARE
-//     Prepara il beat AXI4-Stream di uscita corrente.
-//
-//   STATE_TX_SEND
-//     Mantiene out_tvalid alto finché il sink accetta il beat.
 module mini_sharp_switch_core #(
     parameter int AXIS_WIDTH        = 512,
     parameter int MAX_PACKET_BYTES  = 2048,

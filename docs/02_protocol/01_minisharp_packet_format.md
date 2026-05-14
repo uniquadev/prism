@@ -1,31 +1,31 @@
-# Mini-Sharp packet format
+# Formato del pacchetto Mini-Sharp
 
-## Byte order policy
+## Politica sull’ordine dei byte
 
-The Ethernet header keeps standard Ethernet/network byte order.
+L’header Ethernet mantiene l’ordine dei byte standard di Ethernet/rete.
 
-All Mini-Sharp custom multi-byte header fields are encoded little-endian.
+Tutti i campi multi-byte personalizzati Mini-Sharp sono codificati in little-endian.
 
-All Mini-Sharp multi-byte payload elements are encoded little-endian.
+Tutti gli elementi payload multi-byte Mini-Sharp sono codificati in little-endian.
 
-Single-byte fields such as `collective_op`, `op_flags`, `data_type`, `collective_flags`, `reserved`, and `DTYPE_INT8` payload elements have no byte-order ambiguity. (updated)
+I campi a singolo byte come `collective_op`, `op_flags`, `data_type`, `collective_flags`, `reserved` e gli elementi payload `DTYPE_INT8` non presentano ambiguità sull’ordine dei byte.
 
-Ethernet header: 14 bytes.
+Header Ethernet: 14 byte.
 
-Mini-Sharp header (current implementation, breaking change): 19 bytes consisting of:
+Header Mini-Sharp (implementazione corrente, breaking change): 19 byte composti da:
 
-- `chunk_id` (4 bytes)
-- `p_size` (4 bytes)
-- `flow_id` (2 bytes)
+- `chunk_id` (4 byte)
+- `p_size` (4 byte)
+- `flow_id` (2 byte)
 - `collective_op` (1 byte)
-- `op_flags` (1 byte)  # meaning depends on `collective_op` (for REDUCE, contains reduce operator)
+- `op_flags` (1 byte)  # il significato dipende da `collective_op` (per REDUCE contiene l’operatore di riduzione)
 - `data_type` (1 byte)
 - `collective_flags` (1 byte)
 - `reserved` (1 byte)
-- `expected_contributions` (2 bytes)
-- `contribution_index` (2 bytes)
+- `expected_contributions` (2 byte)
+- `contribution_index` (2 byte)
 
-Offset summary (relative to Ethernet header):
+Riepilogo offset (rispetto all’header Ethernet):
 
 - `CHUNK_ID_OFFSET = 0`
 - `P_SIZE_OFFSET = 4`
@@ -38,4 +38,4 @@ Offset summary (relative to Ethernet header):
 - `EXPECTED_OFFSET = 15`
 - `CONTRIB_OFFSET = 17`
 
-Current verified frame length: 14 (Ethernet) + 19 (Mini-Sharp) + payload size.
+Lunghezza del frame attualmente verificata: 14 (Ethernet) + 19 (Mini-Sharp) + dimensione del payload.
