@@ -111,9 +111,6 @@ help:
 	@echo "  make shell                           Open a Docker shell."
 	@echo "  make clean                           Remove generated artifacts."
 	@echo ""
-	@echo "Backward-compatible alias:"
-	@echo "  make passthrough                     Alias for tests."
-	@echo ""
 	@echo "Options:"
 	@echo "  USE_DOCKER=0                         Run locally."
 	@echo "  WAVES=1                              Enable Verilator waveform tracing."
@@ -178,12 +175,6 @@ tests-docker: image check-docker-paths
 			MINISHARP_USE_SYSTEM_TRAFFIC_GEN=1 \
 			MINISHARP_BUILD_DIR=/tmp/mini-sharp-rtl/sim_build \
 			MINISHARP_TRACES_DIR=verification/traces
-
-# Backward-compatible aliases.
-test: tests
-passthrough: tests
-passthrough-local: tests-local
-passthrough-docker: tests-docker
 
 run_pcap:
 ifeq ($(strip $(PCAP_IN)),)

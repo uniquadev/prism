@@ -34,13 +34,17 @@ accumulation inside the collective engine.
 
 ```bash
 cd repo/rtl
-make passthrough
+make tests
+# or for a specific pcap
+make run_pcap path/to/pcap
 ```
 
 Generated PCAP files are written under:
 
 ```text
-repo/rtl/traces/
+repo/rtl/verification/traces/
+# or for specific pcap if no output path is specified
+repo/rtl/out.pcap
 ```
 
 ## License
