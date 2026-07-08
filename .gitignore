@@ -4,6 +4,10 @@ __pycache__/
 .pytest_cache/
 .venv/
 
+# MkDocs
+site/
+.mkdocs-serve.*.log
+
 # Verilator / build artifacts
 /tmp/mini-sharp-rtl/
 build/

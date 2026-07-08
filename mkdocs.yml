@@ -1,0 +1,161 @@
+site_name: Mini-Sharp
+site_description: Bachelor thesis documentation for primitive hardware for network computing.
+site_author: Lorenzo Cipolletti
+site_url: https://uniquadev.github.io/mini-sharp/
+copyright: Copyright &copy; 2026 Sapienza University of Rome
+
+docs_dir: docs
+site_dir: site
+
+watch:
+  - includes
+
+draft_docs: |
+  /drafts/test.md
+  /chapters/1-introduction/index.md
+  **/*.example.md
+
+theme:
+  name: material
+  language: en
+  favicon: assets/images/favicon.svg
+  icon:
+    logo: fontawesome/solid/cube
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.path
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - content.footnote.tooltips
+
+plugins:
+  - search:
+      lang: en
+      separator: '[\s\-\.]+'
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+  - autorefs
+  - git-revision-date-localized:
+      enable_creation_date: false
+      enable_git_follow: false
+      fallback_to_build_date: true
+      strict: false
+      type: date
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      effect: zoom
+      slide_effect: slide
+  - minify_html:
+      minify_css: true
+      minify_js: true
+
+nav:
+  - "1. Introduction":
+      - index.md
+      - "1.1 Reproducibility": chapters/1-introduction/reproducibility.md
+  - "2. Getting Started":
+      - chapters/2-getting-started/index.md
+  - "3. Architecture":
+      - chapters/3-architecture/index.md
+      - "3.1 Protocol": chapters/3-architecture/protocol.md
+      - "3.2 Pipeline": chapters/3-architecture/pipeline.md
+      - "3.3 Interfaces": chapters/3-architecture/interfaces.md
+      - "3.4 Register Map": chapters/3-architecture/register-map.md
+  - "4. Results":
+      - chapters/4-results/index.md
+      - "4.1 Verification Evidence": chapters/4-results/verification.md
+  - "5. Future Works":
+    - chapters/5-future-works/index.md
+    - "5.1 Protocol": chapters/5-future-works/protocol.md
+  - "6. Glossary": chapters/6-glossary/index.md
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      title: On this page
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid-source
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/uniquadev/mini-sharp
+      name: Mini-Sharp on GitHub
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js
+  - assets/javascripts/mermaid.js
+  - assets/javascripts/tables.js
+  - assets/javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
