@@ -7,8 +7,8 @@ copyright: Copyright &copy; 2026 Sapienza University of Rome
 docs_dir: docs
 site_dir: site
 
-watch:
-  - includes
+# watch:
+#   - docs/includes
 
 draft_docs: |
   /drafts/test.md
@@ -131,7 +131,7 @@ markdown_extensions:
   - pymdownx.mark
   - pymdownx.snippets:
       auto_append:
-        - includes/abbreviations.md
+        - docs/includes/abbreviations.md
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
