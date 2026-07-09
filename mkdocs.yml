@@ -85,9 +85,9 @@ plugins:
       minify_js: true
 
 nav:
-  - "MiniSharp":
+  - "1. Introduction":
       - index.md
-      - "1.1 Reproducibility": chapters/1-introduction/reproducibility.md
+      - "1.1 Floating-Point Reproducibility": chapters/1-introduction/reproducibility.md
   - "2. Getting Started":
       - chapters/2-getting-started/index.md
   - "3. Architecture":

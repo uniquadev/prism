@@ -7,6 +7,7 @@ __pycache__/
 # MkDocs
 site/
 .mkdocs-serve.*.log
+.tmp-*
 
 # Verilator / build artifacts
 /tmp/mini-sharp-rtl/

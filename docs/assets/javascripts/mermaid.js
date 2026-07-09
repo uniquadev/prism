@@ -158,8 +158,10 @@
     const state = {
       box: null,
       dragging: false,
+      gesture: null,
       lastX: 0,
       lastY: 0,
+      pointers: new Map(),
       scale: 1,
       x: 0,
       y: 0
@@ -201,10 +203,94 @@
       setTransform();
     }
 
+    function beginPinch() {
+      const points = getPointerPoints();
+
+      if (points.length < 2) {
+        state.gesture = null;
+        return;
+      }
+
+      const rect = stage.getBoundingClientRect();
+      const center = getPointCenter(points[0], points[1], rect);
+      const distance = getPointDistance(points[0], points[1]);
+
+      state.gesture = {
+        centerX: center.x,
+        centerY: center.y,
+        contentX: (center.x - state.x) / state.scale,
+        contentY: (center.y - state.y) / state.scale,
+        distance,
+        scale: state.scale
+      };
+    }
+
+    function updatePinch() {
+      const points = getPointerPoints();
+
+      if (points.length < 2 || !state.gesture) {
+        return;
+      }
+
+      const rect = stage.getBoundingClientRect();
+      const center = getPointCenter(points[0], points[1], rect);
+      const distance = getPointDistance(points[0], points[1]);
+      const ratio = distance / Math.max(state.gesture.distance, 1);
+      const nextScale = clamp(state.gesture.scale * ratio, MIN_ZOOM, MAX_ZOOM);
+
+      state.scale = nextScale;
+      state.x = center.x - state.gesture.contentX * nextScale;
+      state.y = center.y - state.gesture.contentY * nextScale;
+      setTransform();
+    }
+
+    function getPointerPoints() {
+      return Array.from(state.pointers.values());
+    }
+
+    function getPointDistance(a, b) {
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    }
+
+    function getPointCenter(a, b, rect) {
+      return {
+        x: (a.clientX + b.clientX) / 2 - rect.left,
+        y: (a.clientY + b.clientY) / 2 - rect.top
+      };
+    }
+
+    function updateGestureAfterPointerEnd() {
+      const points = getPointerPoints();
+
+      if (!points.length) {
+        state.dragging = false;
+        state.gesture = null;
+        stage.classList.remove("is-dragging");
+        return;
+      }
+
+      if (points.length === 1) {
+        state.dragging = true;
+        state.gesture = null;
+        state.lastX = points[0].clientX;
+        state.lastY = points[0].clientY;
+        stage.classList.add("is-dragging");
+        return;
+      }
+
+      state.dragging = false;
+      stage.classList.remove("is-dragging");
+      beginPinch();
+    }
+
     function close() {
       element.hidden = true;
       element.setAttribute("aria-hidden", "true");
       document.body.classList.remove("mermaid-viewer-open");
+      state.pointers.clear();
+      state.dragging = false;
+      state.gesture = null;
+      stage.classList.remove("is-dragging");
       canvas.replaceChildren();
     }
 
@@ -215,14 +301,51 @@
     }, { passive: false });
 
     stage.addEventListener("pointerdown", function (event) {
-      state.dragging = true;
-      state.lastX = event.clientX;
-      state.lastY = event.clientY;
-      stage.setPointerCapture(event.pointerId);
-      stage.classList.add("is-dragging");
+      event.preventDefault();
+      state.pointers.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY
+      });
+
+      if (typeof stage.setPointerCapture === "function") {
+        try {
+          stage.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Synthetic pointer events and some interrupted touch streams may not
+          // have an active pointer by the time capture is requested.
+        }
+      }
+
+      if (state.pointers.size === 1) {
+        state.dragging = true;
+        state.gesture = null;
+        state.lastX = event.clientX;
+        state.lastY = event.clientY;
+        stage.classList.add("is-dragging");
+        return;
+      }
+
+      state.dragging = false;
+      stage.classList.remove("is-dragging");
+      beginPinch();
     });
 
     stage.addEventListener("pointermove", function (event) {
+      if (!state.pointers.has(event.pointerId)) {
+        return;
+      }
+
+      event.preventDefault();
+      state.pointers.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY
+      });
+
+      if (state.pointers.size >= 2) {
+        updatePinch();
+        return;
+      }
+
       if (!state.dragging) {
         return;
       }
@@ -235,14 +358,22 @@
     });
 
     stage.addEventListener("pointerup", function (event) {
-      state.dragging = false;
-      stage.releasePointerCapture(event.pointerId);
-      stage.classList.remove("is-dragging");
+      state.pointers.delete(event.pointerId);
+
+      if (typeof stage.releasePointerCapture === "function" && stage.hasPointerCapture(event.pointerId)) {
+        try {
+          stage.releasePointerCapture(event.pointerId);
+        } catch (error) {
+          // Capture may already have been released by the browser.
+        }
+      }
+
+      updateGestureAfterPointerEnd();
     });
 
-    stage.addEventListener("pointercancel", function () {
-      state.dragging = false;
-      stage.classList.remove("is-dragging");
+    stage.addEventListener("pointercancel", function (event) {
+      state.pointers.delete(event.pointerId);
+      updateGestureAfterPointerEnd();
     });
 
     element.addEventListener("click", function (event) {

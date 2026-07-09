@@ -162,8 +162,9 @@
 }
 
 .md-typeset table:not([class]) code {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   white-space: normal;
+  word-break: normal;
 }
 
 body.mermaid-viewer-open {
@@ -311,11 +312,10 @@ body.mermaid-viewer-open {
   .md-typeset table[data-responsive-table="true"] td {
     align-items: start;
     border-top: 1px solid var(--md-default-fg-color--lightest);
-    display: grid;
-    gap: 0.75rem;
-    grid-template-columns: minmax(6rem, 34%) minmax(0, 1fr);
+    display: block;
     min-width: 0;
     padding: 0.65rem 0.75rem;
+    text-align: left !important;
     width: 100%;
   }
 
@@ -326,9 +326,30 @@ body.mermaid-viewer-open {
   .md-typeset table[data-responsive-table="true"] td::before {
     color: var(--md-default-fg-color--light);
     content: attr(data-label);
+    display: block;
+    font-size: 0.68rem;
     font-weight: 700;
+    line-height: 1.35;
+    margin-bottom: 0.35rem;
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  .md-typeset table[data-responsive-table="true"][data-column-count="2"] td {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(6rem, 34%) minmax(0, 1fr);
+  }
+
+  .md-typeset table[data-responsive-table="true"][data-column-count="2"] td::before {
+    font-size: inherit;
+    line-height: inherit;
+    margin-bottom: 0;
+  }
+
+  .md-typeset table[data-responsive-table="true"]:not([data-column-count="2"]) td code {
+    display: inline;
+    line-height: 1.65;
   }
 
   .mermaid-viewer__toolbar {

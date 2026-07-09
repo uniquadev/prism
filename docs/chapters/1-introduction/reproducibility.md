@@ -46,7 +46,7 @@ The motivation is stronger now than it would have been a decade ago.
 
 First, in-network collective offload is no longer an exotic idea. NVIDIA/Mellanox SHARP[^sharp-overview] has made aggregation nodes, aggregation trees, and collective offload part of the vocabulary of production HPC and AI fabrics. SHARP[^sharp-blog] demonstrates that moving reduction work into the network can reduce redundant endpoint traffic and free CPU/GPU resources from communication processing.
 
-Second, distributed AI and HPC workloads increasingly operate at scales where collective communication is a first-order performance limit. Systems such as SwitchML showed that aggregating model updates in the network can improve end-to-end distributed training performance by reducing exchanged data and bypassing some host-side communication overheads.[^switchml]
+Second, distributed AI and HPC workloads increasingly operate at scales where collective communication is a first-order performance limit. Systems such as SwitchML[^switchml] showed that aggregating model updates in the network can improve end-to-end distributed training performance by reducing exchanged data and bypassing some host-side communication overheads.
 
 Third, modern accelerators already rely on mixed precision. NVIDIA H100-style FP8[^nvidia-fp8] uses distinct E4M3 and E5M2 formats, typically choosing E4M3 for precision-sensitive forward values and E5M2 for higher-dynamic-range gradients. This makes accumulation semantics more important, not less: low-precision payloads are often acceptable only because accumulation is performed in a wider or more stable format.
 

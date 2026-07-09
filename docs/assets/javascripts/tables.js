@@ -16,6 +16,7 @@
       }
 
       table.dataset.responsiveTable = "true";
+      table.dataset.columnCount = String(headers.length);
 
       table.querySelectorAll("tbody tr").forEach(function (row) {
         Array.from(row.children).forEach(function (cell, index) {
