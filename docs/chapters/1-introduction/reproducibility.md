@@ -161,7 +161,7 @@ bits per reduction lane, before adding implementation metadata such as valid bit
     W_{\mathrm{dot\ mag}}+\lceil\log_2 N\rceil+1.
     \]
 
-    For FP32 dot-product accumulation this gives \(555+\lceil\log_2 N\rceil\) signed bits. That number is appropriate for an exact MAC engine, not for a scalar Allreduce-style sum.
+    For FP32 dot-product accumulation this gives \(555+\lceil\log_2 N\rceil\) signed bits. That number is appropriate for an exact MAC engine, not for a scalar `ALLREDUCE`-style sum.
 
 ## Why not only preserve the FP32 order?
 
