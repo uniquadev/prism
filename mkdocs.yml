@@ -1,7 +1,7 @@
 site_name: Mini-Sharp
 site_description: Bachelor thesis documentation for primitive hardware for network computing.
 site_author: Lorenzo Cipolletti
-site_url: https://uniquadev.github.io/mini-sharp/
+site_url: https://minisharp.uniqua.dev/
 copyright: Copyright &copy; 2026 Sapienza University of Rome
 
 docs_dir: docs

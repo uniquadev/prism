@@ -12,7 +12,7 @@ $env:NO_MKDOCS_2_WARNING="1"
 uvx --with-requirements requirements-docs.txt mkdocs serve
 ```
 
-MkDocs serves the site at `http://127.0.0.1:8000/mini-sharp/` and reloads pages
+MkDocs serves the site at `http://127.0.0.1:8000/` and reloads pages
 as Markdown files change.
 
 ## Strict build
