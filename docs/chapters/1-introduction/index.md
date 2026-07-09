@@ -1,20 +1,20 @@
-# 1. Introduction
+# MiniSharp
 
-MiniSharp is an open-source RTL research prototype for [“in-network collective”](chapters/6-glossary/index.md#inc) (INC) on FPGA-based packet-processing datapaths. The project explores how reduction-oriented collective operations, such as `reduce` aggregation, can be partially offloaded from the host CPU/GPU communication stack into the network data plane itself. In this sense, MiniSharp is inspired by the same broad direction as Mellanox/NVIDIA SHARP, which demonstrated that collective reduction processing can be moved into network switching hardware to reduce communication overhead and improve collective latency. [^sharp]
+MiniSharp is an open-source RTL research prototype for “in-network collective” (INC) on FPGA-based packet-processing datapaths. The project explores how reduction-oriented collective operations, such as `REDUCE_SUM`[^mpi-reduce] aggregation, can be partially offloaded from the host accelerator (CPU/GPU) communication stack into the network data plane itself. In this sense, MiniSharp is inspired by the same broad direction as Mellanox/NVIDIA SHARP[^sharp], which demonstrated that collective reduction processing can be moved into network switching hardware to reduce communication overhead and improve collective latency.
 
 !!! abstract "Objective"
 
     MiniSharp is **not** an attempt to clone SHARP, nor does it aim to reproduce the full functionality of a commercial InfiniBand or Ethernet switch ASIC. Instead, it is a compact and inspectable hardware research vehicle for studying the microarchitecture of INC primitives under FPGA constraints. The core question is narrower and more experimental: **how can a switch-like RTL datapath support line-rate packet forwarding and streaming collective accumulation while also improving floating-point reproducibility?**
 
-The design targets a 512-bit [AXI](chapters/6-glossary/index.md#axi)-Stream packet interface and is intended to be mapped onto an FPGA NIC/smartNIC-style shell, such as an OpenNIC-like platform. Its data plane is organized around packet parsing, L2 classification, custom EtherType handling, protocol versioning, Virtual Output Queueing (VOQ), shared packet memory, packet-level egress arbitration, cut-through forwarding, and a streaming collective engine.
+The design targets a 512-bit AXI-Stream packet interface and is intended to be mapped onto an FPGA NIC/smartNIC-style shell, such as an OpenNIC-like platform. Its data plane is organized around packet parsing, L2 classification, custom EtherType handling, protocol versioning, Virtual Output Queueing (VOQ), shared packet memory, packet-level egress arbitration, cut-through forwarding, and a streaming collective engine.
 
-From a switching perspective, MiniSharp implements a **switch-inspired data-plane skeleton** rather than a complete production switch. It includes mechanisms commonly found in high-performance packet switches, such as per-output arbitration, VOQ-style buffering, shared-memory packet storage, backpressure propagation, and packet-level scheduling. However, advanced industrial features such as VLAN processing, ACLs, multicast replication engines, QoS hierarchies, credit-based congestion control, ECN/PFC, telemetry, fault isolation, and production-grade buffer management are intentionally outside the initial scope.
+From a numerical perspective, MiniSharp focuses on reproducible floating-point reductions. Conventional FP32 reductions are sensitive to operand ordering because floating-point addition is not associative; different reduction trees or scheduling orders may produce different bit-level results. MiniSharp therefore compares a baseline FP32 accumulation path against a Kulisch-style[^kulisch] long-accumulator approach, with the goal of studying the area, latency, throughput, and reproducibility trade-offs of exact or near-exact accumulation in a streaming network datapath.
 
-From a numerical perspective, MiniSharp focuses on reproducible floating-point reductions. Conventional FP32 reductions are sensitive to operand ordering because floating-point addition is not associative; different reduction trees or scheduling orders may produce different bit-level results. MiniSharp therefore compares a baseline FP32 accumulation path against a Kulisch-style long-accumulator approach, with the goal of studying the area, latency, throughput, and reproducibility trade-offs of exact or near-exact accumulation in a streaming network datapath. [^kulisch]
+From a switching perspective, MiniSharp implements a **switch-inspired data-plane skeleton** rather than a complete production switch. It includes mechanisms commonly found in high-performance packet switches, such as per-output arbitration, VOQ-style buffering, shared-memory packet storage, backpressure propagation, and packet-level scheduling. However, advanced features such as VLAN processing, ACLs, multicast replication engines, QoS hierarchies, credit-based congestion control, ECN/PFC, telemetry, fault isolation, and production-grade buffer management are intentionally outside the initial scope.
 
 The latest source code is available from the [MiniSharp GitHub repository](https://github.com/uniquadev/mini-sharp).
 
-## 1.2 Citation
+## Citation
 
 If you use MiniSharp in your project, please cite the repository and/or the thesis:
 
@@ -22,14 +22,14 @@ If you use MiniSharp in your project, please cite the repository and/or the thes
 --8<-- "docs/assets/references.bib"
 ```
 
-## 1.3 Reading paths
+## Reading guide
 
 <div class="grid cards" markdown>
 
 -   :material-map-marker-path: **First pass**
 
-    Start with [2. Getting Started](chapters/2-getting-started/index.md), then
-    read the [3. Architecture](chapters/3-architecture/index.md) overview.
+    Start with [1.2 Reproducibility](chapters/1-introduction/reproducibility.md), then
+    read the [2. Getting Started](chapters/2-getting-started/index.md) overview.
 
 -   :material-chip: **Hardware view**
 
@@ -44,6 +44,8 @@ If you use MiniSharp in your project, please cite the repository and/or the thes
 </div>
 
 
+[^mpi-reduce]: MPI Forum, *MPI 4.1 Standard*, `MPI_Reduce`. The standard notes that implementations may change reduction order using associativity/commutativity and that this can change results for floating-point addition. https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node130.htm
 [^sharp]: Mellanox SHARP: Scalable Hierarchical Aggregation and Reduction Protocol.
 [^kulisch]: Kulisch, Ulrich W. "Computer Arithmetic and Validity: Theory, Implementation, and Applications." Walter de Gruyter, 2002.
 [^mpi-collectives]: MPI collective operations: https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node90.htm
+

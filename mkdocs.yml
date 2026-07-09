@@ -85,7 +85,7 @@ plugins:
       minify_js: true
 
 nav:
-  - "1. Introduction":
+  - "MiniSharp":
       - index.md
       - "1.1 Reproducibility": chapters/1-introduction/reproducibility.md
   - "2. Getting Started":
@@ -102,7 +102,6 @@ nav:
   - "5. Future Works":
     - chapters/5-future-works/index.md
     - "5.1 Protocol": chapters/5-future-works/protocol.md
-  - "6. Glossary": chapters/6-glossary/index.md
 
 markdown_extensions:
   - abbr

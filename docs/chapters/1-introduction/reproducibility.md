@@ -1,6 +1,6 @@
-# Reproducibility
+# Floating-Point Reproducibility
 
-Floating-point reproducibility is a correctness property of the collective offload, not only a numerical-analysis detail. In an in-network collective, the effective reduction order can be affected by packet arrival time, VOQ arbitration, backpressure, egress scheduling, tree shape, and rank-to-port placement. This is a problem for IEEE-style floating-point addition: floating-point addition is rounded after each operation and is therefore not associative.[^mpi-reduce]
+Floating-point reproducibility is a correctness property of the collective offload, not only a numerical-analysis detail. In an in-network collective, the effective reduction order can be affected by packet arrival time, VOQ arbitration, backpressure, egress scheduling, tree shape, and rank-to-port placement. This is a problem for IEEE-style floating-point addition: floating-point addition is rounded after each operation and is therefore not associative.
 
 MiniSharp studies this problem at the packet-processing boundary. The goal is not to make a whole distributed application deterministic by itself. Local computation, tensor partitioning, compiler choices, GPU kernels, and host-side reduction fragments may still introduce nondeterminism before packets reach the switch. The narrower question is:
 
@@ -10,19 +10,16 @@ MiniSharp studies this problem at the packet-processing boundary. The goal is no
 
 This matters for debugging, regression testing, numerical validation, checkpoint/restart workflows, and scientific or safety-critical workloads where bitwise differences make failures hard to reproduce. It also matters operationally: in a real cluster, the same job may be launched with the same number of ranks but mapped onto different nodes, leaf ports, or aggregation paths.
 
-## Why this is a switch datapath problem
+## Candidate strategies
 
-In a host-side collective library, the reduction order is often an implementation detail of the selected collective algorithm. In a switch datapath, the problem becomes more explicit. A streaming aggregation engine sees packets as timed events and must decide whether to consume operands in arrival order, in a rank-indexed order, or in an order-independent representation.
+MiniSharp exposes reproducibility as a design space rather than as a single hard-coded arithmetic choice.
 
-From a switching perspective, the relevant hazards are:
+| Strategy | Datapath idea | Reproducibility guarantee | Main cost |
+|---|---|---|---|
+| **Baseline FP32 accumulation** | Accumulate operands as packets arrive. | None beyond a particular run. | Lowest state and simplest datapath. |
+| **Deterministic FP32 scheduling** | Wait until all expected ranks for an epoch/lane have arrived, then add them in a fixed logical rank order or fixed tree. | Bitwise reproducible for the same rank set and same logical order. | Barrier-like behavior, buffering, contribution bitmaps, head-of-line blocking. |
+| **Kulisch-style / superaccumulator path** | Convert each finite input into an exact fixed-point deposit; merge deposits with integer arithmetic; round once at the end. | Order-independent exact finite summation before final rounding. | Wide accumulator state, banking, carry management, final normalization, exception policy. |
 
-- **arrival-order dependence**, where the first packet to reach an accumulator slot becomes the first addend;
-- **VOQ and egress arbitration dependence**, where unrelated congestion changes the timing of reduction packets;
-- **tree-shape dependence**, where different aggregation trees produce different parenthesizations of the same sum;
-- **fragmentation dependence**, where vector chunks or packet beats are reduced in different partial orders;
-- **epoch-completion dependence**, where a reduction result is emitted before all expected participants have contributed.
-
-For this reason, MiniSharp treats floating-point reproducibility as part of the data-plane contract of a collective offload. The reducer is not just a packet parser plus an FP adder; it is an **epoch-indexed aggregation engine** with rank metadata, contribution tracking, accumulator state, and a finalization rule.
 
 ```mermaid
 flowchart LR
@@ -41,29 +38,19 @@ flowchart LR
     G --> O3[Order-independent finite sum]
 ```
 
-## Candidate strategies
-
-MiniSharp exposes reproducibility as a design space rather than as a single hard-coded arithmetic choice.
-
-| Strategy | Datapath idea | Reproducibility guarantee | Main cost |
-|---|---|---|---|
-| **Baseline FP32 accumulation** | Accumulate operands as packets arrive. | None beyond a particular run. | Lowest state and simplest datapath. |
-| **Deterministic FP32 scheduling** | Wait until all expected ranks for an epoch/lane have arrived, then add them in a fixed logical rank order or fixed tree. | Bitwise reproducible for the same rank set and same logical order. | Barrier-like behavior, buffering, contribution bitmaps, head-of-line blocking. |
-| **Kulisch-style / superaccumulator path** | Convert each finite input into an exact fixed-point deposit; merge deposits with integer arithmetic; round once at the end. | Order-independent exact finite summation before final rounding. | Wide accumulator state, banking, carry management, final normalization, exception policy. |
-
 The important distinction is that **deterministic scheduling fixes the order**, while a **superaccumulator removes the order as a numerical variable**. The first approach is cheaper and useful as a baseline. The second is more expensive, but it better matches the semantics expected from an order-independent collective reduction.
 
 ## Why try superaccumulators now?
 
 The motivation is stronger now than it would have been a decade ago.
 
-First, in-network collective offload is no longer an exotic idea. NVIDIA/Mellanox SHARP has made aggregation nodes, aggregation trees, and collective offload part of the vocabulary of production HPC and AI fabrics.[^sharp-overview] SHARP demonstrates that moving reduction work into the network can reduce redundant endpoint traffic and free CPU/GPU resources from communication processing.[^sharp-blog]
+First, in-network collective offload is no longer an exotic idea. NVIDIA/Mellanox SHARP[^sharp-overview] has made aggregation nodes, aggregation trees, and collective offload part of the vocabulary of production HPC and AI fabrics. SHARP[^sharp-blog] demonstrates that moving reduction work into the network can reduce redundant endpoint traffic and free CPU/GPU resources from communication processing.
 
 Second, distributed AI and HPC workloads increasingly operate at scales where collective communication is a first-order performance limit. Systems such as SwitchML showed that aggregating model updates in the network can improve end-to-end distributed training performance by reducing exchanged data and bypassing some host-side communication overheads.[^switchml]
 
-Third, modern accelerators already rely on mixed precision. NVIDIA H100-style FP8 uses distinct E4M3 and E5M2 formats, typically choosing E4M3 for precision-sensitive forward values and E5M2 for higher-dynamic-range gradients.[^nvidia-fp8] This makes accumulation semantics more important, not less: low-precision payloads are often acceptable only because accumulation is performed in a wider or more stable format.
+Third, modern accelerators already rely on mixed precision. NVIDIA H100-style FP8[^nvidia-fp8] uses distinct E4M3 and E5M2 formats, typically choosing E4M3 for precision-sensitive forward values and E5M2 for higher-dynamic-range gradients. This makes accumulation semantics more important, not less: low-precision payloads are often acceptable only because accumulation is performed in a wider or more stable format.
 
-Fourth, conventional programmable-switch datapaths were designed primarily for packet processing, not for application-level floating-point arithmetic. Work on FPISA explicitly identifies floating-point data in distributed training and query processing as a case where existing switch hardware needs expensive workarounds or architectural support.[^fpisa] MiniSharp is therefore positioned as an RTL research vehicle: instead of emulating floating point inside a restricted P4/RMT pipeline, it studies what a purpose-built FPGA datapath would cost.
+Fourth, conventional programmable-switch datapaths were designed primarily for packet processing, not for application-level floating-point arithmetic. Work on FPISA[^fpisa] explicitly identifies floating-point data in distributed training and query processing as a case where existing switch hardware needs expensive workarounds or architectural support. MiniSharp is therefore positioned as an RTL research vehicle: instead of emulating floating point inside a restricted P4/RMT pipeline, it studies what a purpose-built FPGA datapath would cost.
 
 Finally, exact or reproducible accumulation maps naturally to hardware research questions: accumulator width, carry-save versus carry-propagate organization, banked accumulator files, BRAM/URAM pressure, initiation interval, Fmax, backpressure behavior, and final rounding latency. These are precisely the trade-offs that a compact RTL prototype can expose.
 
@@ -200,8 +187,6 @@ The expected contribution is not the claim that superaccumulators are universall
 \]
 
 For MiniSharp, this is the central research point: if a switch-like datapath already contains parser state, VOQs, shared packet memory, arbitration, backpressure, and aggregation slots, then the open question is whether exact or near-exact floating-point accumulation can be integrated without destroying line-rate behavior.
-
-[^mpi-reduce]: MPI Forum, *MPI 4.1 Standard*, `MPI_Reduce`. The standard notes that implementations may change reduction order using associativity/commutativity and that this can change results for floating-point addition. https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node130.htm
 
 [^sharp-overview]: NVIDIA, *Scalable Hierarchical Aggregation and Reduction Protocol (SHARP)* documentation. SHARP is described as offloading MPI and machine-learning collective operations from CPUs and GPUs to the network. https://docs.nvidia.com/networking/display/sharpv300
 
