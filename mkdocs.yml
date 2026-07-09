@@ -68,6 +68,46 @@ plugins:
           default: true
           name: English
           build: true
+        - locale: it
+          name: Italiano
+          build: true
+          site_description: Documentazione della tesi su primitive hardware per il calcolo in rete.
+          theme:
+            language: it
+            palette:
+              - media: "(prefers-color-scheme: light)"
+                scheme: default
+                primary: black
+                accent: blue
+                toggle:
+                  icon: material/weather-night
+                  name: Passa alla modalità scura
+              - media: "(prefers-color-scheme: dark)"
+                scheme: slate
+                primary: black
+                accent: blue
+                toggle:
+                  icon: material/weather-sunny
+                  name: Passa alla modalità chiara
+          extra:
+            generator: false
+            social:
+              - icon: fontawesome/brands/github
+                link: https://github.com/uniquadev/mini-sharp
+                name: Mini-Sharp su GitHub
+          nav_translations:
+            "1. Introduction": "1. Introduzione"
+            "1.1 Floating-Point Reproducibility": "1.1 Riproducibilità in virgola mobile"
+            "2. Getting Started": "2. Per iniziare"
+            "3. Architecture": "3. Architettura"
+            "3.1 Protocol": "3.1 Protocollo"
+            "3.2 Pipeline": "3.2 Pipeline"
+            "3.3 Interfaces": "3.3 Interfacce"
+            "3.4 Register Map": "3.4 Mappa dei registri"
+            "4. Results": "4. Risultati"
+            "4.1 Verification Evidence": "4.1 Evidenze di verifica"
+            "5. Future Works": "5. Sviluppi futuri"
+            "5.1 Protocol": "5.1 Protocollo"
   - autorefs
   - git-revision-date-localized:
       enable_creation_date: false
@@ -113,7 +153,6 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
-      title: On this page
   - pymdownx.arithmatex:
       generic: true
   - pymdownx.caret
