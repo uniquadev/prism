@@ -41,6 +41,7 @@ class FakeSwitchClient:
         self.calls: Counter[ControlCommand] = Counter()
         self.fail_once: dict[ControlCommand, Status] = {}
         self.lose_after_apply_once: set[ControlCommand] = set()
+        self.reported_state_once: dict[ControlCommand, int] = {}
 
     def call(
         self,
@@ -101,7 +102,8 @@ class FakeSwitchClient:
             if key not in self.groups:
                 raise PrismError(Status.NOT_FOUND, "group not staged")
             self.groups[key] = GroupState.INSTALLED
-            response_tlvs = (group_handle_tlv(handle), Tlv.u64(TlvType.GROUP_STATUS, int(GroupState.INSTALLED)))
+            reported = self.reported_state_once.pop(command, int(GroupState.INSTALLED))
+            response_tlvs = (group_handle_tlv(handle), Tlv.u64(TlvType.GROUP_STATUS, reported))
         elif command == ControlCommand.GROUP_ABORT:
             handle = GroupHandleWire.unpack(_one(tlvs, TlvType.GROUP_HANDLE).value)
             key = (handle.group_id, handle.generation)
@@ -150,7 +152,8 @@ class FakeSwitchClient:
             group = self.operation_groups[key]
             self.pool.commit_operation((group.group_id, group.generation, handle.operation_id, handle.generation))
             self.operations[key] = OperationState.ACTIVE
-            response_tlvs = (operation_handle_tlv(handle), Tlv.u64(TlvType.OPERATION_STATUS, int(OperationState.ACTIVE)))
+            reported = self.reported_state_once.pop(command, int(OperationState.ACTIVE))
+            response_tlvs = (operation_handle_tlv(handle), Tlv.u64(TlvType.OPERATION_STATUS, reported))
         elif command == ControlCommand.OP_ABORT:
             handle = OperationHandleWire.unpack(_one(tlvs, TlvType.OPERATION_HANDLE).value)
             key = (handle.operation_id, handle.generation)

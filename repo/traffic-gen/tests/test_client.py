@@ -25,15 +25,25 @@ from prism_protocol.model import (
 )
 
 
-def group_descriptor() -> GroupDescriptor:
-    return GroupDescriptor(
-        node_role=NodeRole.SINGLE,
-        expected_local_contributors=1,
-        max_replication_groups=0,
-        max_replication_entries=0,
-        contributors=(ContributorBinding(0, 1, bytes.fromhex("020000000001")),),
-        upstream=UpstreamAction(False, 0, 0, bytes(6)),
-    )
+def group_descriptors() -> dict[str, GroupDescriptor]:
+    return {
+        "s0": GroupDescriptor(
+            node_role=NodeRole.ROOT,
+            expected_local_contributors=1,
+            max_replication_groups=0,
+            max_replication_entries=0,
+            contributors=(ContributorBinding(0, 7, bytes.fromhex("020000000100")),),
+            upstream=UpstreamAction(False, 0, 0, bytes(6)),
+        ),
+        "l0": GroupDescriptor(
+            node_role=NodeRole.LEAF,
+            expected_local_contributors=1,
+            max_replication_groups=0,
+            max_replication_entries=0,
+            contributors=(ContributorBinding(0, 1, bytes.fromhex("020000000001")),),
+            upstream=UpstreamAction(True, 0, 3, bytes.fromhex("0200000000a0")),
+        ),
+    }
 
 
 def operation_descriptor() -> OperationDescriptor:
@@ -59,12 +69,16 @@ class ManagerLifecycleTests(unittest.TestCase):
         self.switches = {name: FakeSwitchClient(name) for name in ("s0", "l0")}
         self.manager = PrismManager(self.switches)
         self.session = self.manager.open_session(0x1234)
-        descriptors = {name: group_descriptor() for name in self.switches}
-        self.group = self.manager.create_group(self.session, 7, descriptors)
+        self.group = self.manager.create_group(self.session, 7, group_descriptors())
 
     def prepare(self, operation_id: int = 9):
         descriptors = {name: operation_descriptor() for name in self.switches}
-        return self.manager.prepare_operation(self.group, operation_id, descriptors)
+        return self.manager.prepare_operation(
+            self.group,
+            operation_id,
+            descriptors,
+            parent_edges={"l0": "s0"},
+        )
 
     def test_partial_tree_prepare_rolls_back_and_releases(self) -> None:
         self.switches["l0"].fail_once[ControlCommand.OP_PREPARE] = Status.NO_BITMAP_MEMORY
@@ -108,6 +122,76 @@ class ManagerLifecycleTests(unittest.TestCase):
         for switch in self.switches.values():
             self.assertEqual(switch.calls[ControlCommand.OP_ABORT], 1)
 
+    def test_commit_requires_every_switch_to_report_active(self) -> None:
+        operation = self.prepare()
+        self.switches["l0"].reported_state_once[ControlCommand.OP_COMMIT] = int(OperationState.PREPARED)
+
+        with self.assertRaises(PrismError) as raised:
+            self.manager.commit_operation(operation)
+
+        self.assertEqual(raised.exception.status, Status.INVALID_STATE)
+        self.assertEqual(operation.state, OperationState.ABORTED)
+        for switch in self.switches.values():
+            self.assertEqual(switch.calls[ControlCommand.OP_ABORT], 1)
+
+    def test_group_commit_requires_every_switch_to_report_installed(self) -> None:
+        switches = {name: FakeSwitchClient(name) for name in ("s0", "l0")}
+        manager = PrismManager(switches)
+        session = manager.open_session(0x5678)
+        switches["l0"].reported_state_once[ControlCommand.GROUP_COMMIT] = int(GroupState.STAGED)
+
+        with self.assertRaises(PrismError) as raised:
+            manager.create_group(
+                session,
+                8,
+                group_descriptors(),
+            )
+
+        self.assertEqual(raised.exception.status, Status.INVALID_STATE)
+        self.assertEqual(switches["s0"].calls[ControlCommand.GROUP_DESTROY], 1)
+        self.assertEqual(switches["l0"].calls[ControlCommand.GROUP_DESTROY], 1)
+
+    def test_group_commit_lost_response_recovers_from_authoritative_status(self) -> None:
+        switches = {name: FakeSwitchClient(name) for name in ("s0", "l0")}
+        manager = PrismManager(switches)
+        session = manager.open_session(0x6789)
+        switches["l0"].lose_after_apply_once.add(ControlCommand.GROUP_COMMIT)
+
+        group = manager.create_group(session, 8, group_descriptors())
+
+        self.assertEqual(group.state, GroupState.INSTALLED)
+        self.assertGreaterEqual(switches["l0"].calls[ControlCommand.GROUP_STATUS], 1)
+
+    def test_prepare_requires_a_complete_tree_description(self) -> None:
+        descriptors = {name: operation_descriptor() for name in self.switches}
+
+        with self.assertRaisesRegex(ValueError, "parent edges must cover"):
+            self.manager.prepare_operation(self.group, 12, descriptors)
+
+    def test_prepare_rejects_semantic_or_operator_disagreement(self) -> None:
+        descriptors = {name: operation_descriptor() for name in self.switches}
+        descriptors["l0"] = replace(descriptors["l0"], semantic=CollectiveSemantic.ALLREDUCE)
+
+        with self.assertRaisesRegex(ValueError, "same collective semantic and operator"):
+            self.manager.prepare_operation(
+                self.group,
+                13,
+                descriptors,
+                parent_edges={"l0": "s0"},
+            )
+
+    def test_prepare_requires_one_tree_wide_result_format(self) -> None:
+        descriptors = {name: operation_descriptor() for name in self.switches}
+        descriptors["s0"] = replace(descriptors["s0"], output_format=WireFormat.FP16)
+
+        with self.assertRaisesRegex(ValueError, "tree-wide result/output wire format"):
+            self.manager.prepare_operation(
+                self.group,
+                14,
+                descriptors,
+                parent_edges={"l0": "s0"},
+            )
+
     def test_release_can_be_retried_after_lost_response(self) -> None:
         operation = self.prepare()
         self.manager.abort_operation(operation)
@@ -120,8 +204,7 @@ class ManagerLifecycleTests(unittest.TestCase):
 
     def test_group_reuse_increments_generation(self) -> None:
         self.manager.destroy_group(self.group)
-        descriptors = {name: group_descriptor() for name in self.switches}
-        reused = self.manager.create_group(self.session, 7, descriptors)
+        reused = self.manager.create_group(self.session, 7, group_descriptors())
         self.assertEqual(reused.wire.generation, self.group.wire.generation + 1)
         self.assertEqual(reused.state, GroupState.INSTALLED)
 

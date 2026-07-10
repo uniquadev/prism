@@ -15,6 +15,7 @@ from .constants import (
     ControlFlag,
     FeatureFlag,
     GroupState,
+    NodeRole,
     OperationState,
     SecurityProfile,
     Status,
@@ -216,7 +217,7 @@ class CollectiveOperationHandle:
 
 
 class PrismManager:
-    """AM-side coordinator for sessions, reusable groups, and two-phase operations."""
+    """AM-side switch orchestrator for sessions, groups, and operations."""
 
     def __init__(
         self,
@@ -365,18 +366,40 @@ class PrismManager:
                 )
                 staged.append(switch_id)
             for switch_id in targets:
-                self.clients[switch_id].call(
-                    ControlCommand.GROUP_COMMIT,
-                    [group_handle_tlv(wire)],
-                    session_cookie=session.cookies[switch_id],
-                )
+                try:
+                    response = self.clients[switch_id].call(
+                        ControlCommand.GROUP_COMMIT,
+                        [group_handle_tlv(wire)],
+                        session_cookie=session.cookies[switch_id],
+                    )
+                except PrismError as commit_error:
+                    try:
+                        state = self._group_status_one(session, wire, switch_id)
+                    except Exception:
+                        raise commit_error
+                    if state != GroupState.INSTALLED:
+                        raise commit_error
+                else:
+                    state = GroupState(_required_tlv(response.tlvs, TlvType.GROUP_STATUS).as_u64())
+                    if state != GroupState.INSTALLED:
+                        raise PrismError(
+                            Status.INVALID_STATE,
+                            f"GROUP_COMMIT returned {state.name}, expected INSTALLED",
+                            switch_id,
+                        )
                 committed.append(switch_id)
         except Exception:
             rollback_complete = True
             for switch_id in reversed(staged):
                 try:
+                    installed = switch_id in committed
+                    if not installed:
+                        try:
+                            installed = self._group_status_one(session, wire, switch_id) == GroupState.INSTALLED
+                        except Exception:
+                            pass
                     self.clients[switch_id].call(
-                        ControlCommand.GROUP_DESTROY if switch_id in committed else ControlCommand.GROUP_ABORT,
+                        ControlCommand.GROUP_DESTROY if installed else ControlCommand.GROUP_ABORT,
                         [group_handle_tlv(wire)],
                         session_cookie=session.cookies[switch_id],
                     )
@@ -393,12 +416,7 @@ class PrismManager:
         self._require_group(group)
         result: dict[str, GroupState] = {}
         for switch_id in group.switch_ids:
-            response = self.clients[switch_id].call(
-                ControlCommand.GROUP_STATUS,
-                [group_handle_tlv(group.wire)],
-                session_cookie=group.session.cookies[switch_id],
-            )
-            result[switch_id] = GroupState(_required_tlv(response.tlvs, TlvType.GROUP_STATUS).as_u64())
+            result[switch_id] = self._group_status_one(group.session, group.wire, switch_id)
         return result
 
     def destroy_group(self, group: CollectiveGroupHandle) -> None:
@@ -429,7 +447,7 @@ class PrismManager:
             raise ValueError("operation descriptors must cover the complete group tree")
         if any(switch_id not in self.capabilities for switch_id in targets):
             self.query_capabilities(targets)
-        self._validate_operation_tree(descriptors, parent_edges or {})
+        self._validate_operation_tree(group.descriptors, descriptors, parent_edges or {})
         for switch_id, descriptor in descriptors.items():
             required_reliability = (
                 FeatureFlag.RELIABLE_HOP_BY_HOP | FeatureFlag.SELECTIVE_ACK | FeatureFlag.RESULT_ACK
@@ -488,7 +506,7 @@ class PrismManager:
         try:
             for switch_id in operation.switch_ids:
                 try:
-                    self.clients[switch_id].call(
+                    response = self.clients[switch_id].call(
                         ControlCommand.OP_COMMIT,
                         [operation_handle_tlv(operation.wire)],
                         session_cookie=operation.group.session.cookies[switch_id],
@@ -497,6 +515,16 @@ class PrismManager:
                     status = self._operation_status_one(operation, switch_id)
                     if status != OperationState.ACTIVE:
                         raise
+                else:
+                    state = OperationState(
+                        _required_tlv(response.tlvs, TlvType.OPERATION_STATUS).as_u64()
+                    )
+                    if state != OperationState.ACTIVE:
+                        raise PrismError(
+                            Status.INVALID_STATE,
+                            f"OP_COMMIT returned {state.name}, expected ACTIVE",
+                            switch_id,
+                        )
         except Exception:
             for switch_id in operation.switch_ids:
                 try:
@@ -570,6 +598,19 @@ class PrismManager:
         )
         return OperationState(_required_tlv(response.tlvs, TlvType.OPERATION_STATUS).as_u64())
 
+    def _group_status_one(
+        self,
+        session: SessionHandle,
+        wire: GroupHandleWire,
+        switch_id: str,
+    ) -> GroupState:
+        response = self.clients[switch_id].call(
+            ControlCommand.GROUP_STATUS,
+            [group_handle_tlv(wire)],
+            session_cookie=session.cookies[switch_id],
+        )
+        return GroupState(_required_tlv(response.tlvs, TlvType.GROUP_STATUS).as_u64())
+
     def _switches(self, switch_ids: Iterable[str] | None) -> tuple[str, ...]:
         targets = tuple(self.clients if switch_ids is None else switch_ids)
         if not targets or any(switch_id not in self.clients for switch_id in targets):
@@ -584,17 +625,83 @@ class PrismManager:
 
     @staticmethod
     def _validate_operation_tree(
+        group_descriptors: Mapping[str, GroupDescriptor],
         descriptors: Mapping[str, OperationDescriptor],
         parent_edges: Mapping[str, str],
     ) -> None:
+        switch_ids = set(descriptors)
+        if set(group_descriptors) != switch_ids:
+            raise ValueError("group and operation descriptors must cover the same switch tree")
+
         geometries = {(item.element_count, item.elements_per_chunk) for item in descriptors.values()}
         if len(geometries) != 1:
             raise ValueError("all operation nodes must use identical element/chunk geometry")
+
+        semantics = {(item.semantic, item.reduction_operator) for item in descriptors.values()}
+        if len(semantics) != 1:
+            raise ValueError("all operation nodes must use the same collective semantic and operator")
+
+        if len(switch_ids) == 1:
+            root = next(iter(switch_ids))
+            group = group_descriptors[root]
+            if group.node_role != NodeRole.SINGLE or group.upstream.has_parent or parent_edges:
+                raise ValueError("a one-switch tree must use one parentless SINGLE node")
+        else:
+            roots = [
+                switch_id
+                for switch_id, descriptor in group_descriptors.items()
+                if descriptor.node_role == NodeRole.ROOT
+            ]
+            if len(roots) != 1:
+                raise ValueError("a multi-switch tree must contain exactly one ROOT node")
+            root = roots[0]
+            if group_descriptors[root].upstream.has_parent:
+                raise ValueError("the ROOT node must not have a parent action")
+            if set(parent_edges) != switch_ids - {root}:
+                raise ValueError("parent edges must cover every non-root switch exactly once")
+
+            for switch_id, group in group_descriptors.items():
+                if switch_id == root:
+                    continue
+                if group.node_role not in (NodeRole.LEAF, NodeRole.INTERNAL):
+                    raise ValueError("non-root nodes must be LEAF or INTERNAL")
+                if not group.upstream.has_parent:
+                    raise ValueError("every non-root node must have a parent action")
+
         for child, parent in parent_edges.items():
-            if child not in descriptors or parent not in descriptors:
+            if child not in switch_ids or parent not in switch_ids:
                 raise ValueError("parent edge references an unknown switch")
+            if child == parent:
+                raise ValueError("a switch cannot be its own parent")
+            if group_descriptors[parent].node_role not in (NodeRole.INTERNAL, NodeRole.ROOT):
+                raise ValueError("a parent switch must be INTERNAL or ROOT")
             if descriptors[child].output_format != descriptors[parent].input_format:
                 raise ValueError("child.output_format must equal parent.input_format")
+
+            visited = {child}
+            current = parent
+            while current != root:
+                if current in visited or current not in parent_edges:
+                    raise ValueError("parent edges must form one acyclic tree rooted at ROOT")
+                visited.add(current)
+                current = parent_edges[current]
+
+        if len(switch_ids) > 1:
+            for switch_id, group in group_descriptors.items():
+                if group.node_role not in (NodeRole.INTERNAL, NodeRole.ROOT):
+                    continue
+                child_count = sum(parent == switch_id for parent in parent_edges.values())
+                if child_count != group.expected_local_contributors:
+                    raise ValueError("INTERNAL/ROOT contributor count must equal its child-subtree count")
+
+        result_format = descriptors[root].output_format
+        if any(item.output_format != result_format for item in descriptors.values()):
+            raise ValueError("Protocol 1.0 requires one tree-wide result/output wire format")
+
+        for switch_id, descriptor in descriptors.items():
+            group_ids = {group.group_id for group in group_descriptors[switch_id].replication_groups}
+            if any(route.replication_group_id not in group_ids for route in descriptor.result_routes):
+                raise ValueError("result route references an unknown local replication group")
 
     @staticmethod
     def _require_session(session: SessionHandle) -> None:

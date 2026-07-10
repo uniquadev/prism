@@ -93,6 +93,33 @@ class DocumentationConsistencyTests(unittest.TestCase):
             r"\bMiniSharp\b|\bMS_[A-Z0-9_]+\b|PM_SETUP_CONTEXT|PM_OP_COL_SETUP|Context ID",
         )
 
+    def test_reduce_storyboard_is_complete_bilingual_and_uniform(self) -> None:
+        expected = (
+            "01-host-collective-request.png",
+            "02-target-specific-switch-setup.png",
+            "03-global-start-grant.png",
+            "04-rank-contributions.png",
+            "05-local-reduction.png",
+            "06-root-reduction.png",
+            "07-result-and-acks.png",
+            "08-operation-complete.png",
+            "09-operation-release.png",
+        )
+        for path in PROTOCOL_DOCS:
+            referenced = tuple(
+                re.findall(r"reduce-lifecycle/([^\s)]+\.png)", path.read_text(encoding="utf-8"))
+            )
+            self.assertEqual(referenced, expected, f"unexpected storyboard sequence in {path.name}")
+
+        asset_dir = ROOT / "docs/assets/images/protocol/reduce-lifecycle"
+        self.assertEqual(tuple(path.name for path in sorted(asset_dir.glob("*.png"))), expected)
+        for filename in expected:
+            header = (asset_dir / filename).read_bytes()[:24]
+            self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n", filename)
+            width = int.from_bytes(header[16:20], "big")
+            height = int.from_bytes(header[20:24], "big")
+            self.assertEqual((width, height), (1536, 1024), filename)
+
 
 if __name__ == "__main__":
     unittest.main()

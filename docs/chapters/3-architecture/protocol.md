@@ -28,9 +28,10 @@ and implementable RTL over a broad management or security stack.
     select forwarding, control, aggregation, result, or progress handling before
     the numeric payload reaches the collective engine.
 
-This page first explains the protocol through one complete reduction, from
-setup to release. The final sections then collect the exact Protocol 1.0
-layouts, registries, and validation rules needed by RTL and host software.
+This page introduces the forwarding, identity, chunking, and startup model
+before presenting the packet layouts. A complete reduction storyboard follows;
+the final sections collect the exact Protocol 1.0 registries and validation
+rules needed by RTL and host software.
 
 ---
 
@@ -72,8 +73,8 @@ The prototype normally uses transparent forwarding.
 ## Collective identifiers
 
 This section defines how packets refer unambiguously to the different entities
-of a collective. The protocol does not separate the physical network topology;
-it separates three logical levels with different lifetimes:
+of a collective. It distinguishes three logical levels with different
+lifetimes:
 
 1. the **group**, namely the contributor tree configured in the switches and
    reusable across executions;
@@ -169,12 +170,19 @@ No FP16, BF16, or FP32 element is split across packets. The AM also enforces
 `child.output_format == parent.input_format` on every aggregation edge.
 Ethernet minimum-frame padding is not interpreted as vector data.
 
+`PM_OP_COL_RES` carries no per-packet format tag. Protocol 1.0 therefore also
+requires one tree-wide `output_format`, equal to the aggregation root's result
+format. A leaf may convert its input before emitting the first partial—for
+example INT8 to FP32—but later levels cannot introduce another wire-format
+conversion. Trees that need different intermediate and final formats are
+unsupported in 1.0.
+
 Chunks may arrive in a different order inside the admitted receive window.
 Chunk Index, not arrival order, selects the correct temporary state.
 
 ---
 
-## Data-plane packet classes
+## PRISM packet classes
 
 After Ethernet ownership is established, the opcode selects one of these paths:
 
@@ -194,39 +202,52 @@ between two neighboring nodes—for example `rank0 -> L0` or `L0 -> S0`.
 
 ## In-band setup
 
-The **Aggregation Manager** (AM) knows the participating ranks, the switch tree,
-and the requested arithmetic. **In-band** means that its commands travel as
-Ethernet packets through the same physical ports as collective data. After
-parsing, control packets use a separate control path and never enter the numeric
-accumulator.
+The application side and the network side have different responsibilities. A
+**Host Coordinator** gathers the participating ranks and their collective
+request. The **Aggregation Manager** (AM) turns that request into a tree-wide
+plan using switch topology, capabilities, and available resources.
+
+Here, **in-band** refers specifically to AM-to-switch control: its commands
+travel as Ethernet packets through the same physical ports as collective data.
+After parsing, control packets use a separate control path and never enter the
+numeric accumulator.
 
 For example, the prototype can use OpenNIC as its FPGA shell: OpenNIC provides
 the host-facing ports and driver path, while PRISM implements the collective
 protocol in the programmable datapath. In-band setup therefore lets experiments
 start without first requiring a separate management processor.
 
+### Host-controlled start
+
+A collective call does not make ranks transmit immediately. The runtime first
+brings all expected ranks to a host-side barrier; the Host Coordinator then asks
+the AM to activate one operation. Only after every target switch reports
+`ACTIVE` does the AM return a `StartGrant`, which the coordinator distributes to
+the ranks through the runtime's reliable host channel.
+
+The grant gives each rank the `Job ID`, `Group ID/Generation`, `Operation
+ID/Generation`, local Contributor ID, destination leaf MAC, result destination
+MAC, wire formats, chunk geometry, and receive window actually admitted by that
+leaf. For `REDUCE`, the host request also identifies the one destination rank.
+If any switch rejects preparation or commit, the AM aborts and releases partial
+state; the coordinator wakes every waiting rank with the same failure, and none
+receives a grant.
+
+Host coordination is deliberately outside the PRISM Ethernet wire protocol. A
+prototype may co-locate coordinator and AM behind a function call; a deployment
+may separate them with RPC. They remain distinct logical roles, and neither the
+host request nor `StartGrant` introduces a `PM_*` opcode.
+
 ### Target-specific delivery
 
-The AM sends one `PM_OP_CONTROL` transaction per target switch. The Ethernet
-destination is that switch's local PRISM MAC and the payload contains only its
-local records. If the AM injects the frames through root `S0`, then `S0` consumes
-its own transaction and forwards frames addressed to `L0` and `L1` unchanged.
-The root does not derive or rewrite child configuration.
-
-```mermaid
-sequenceDiagram
-    participant AM
-    participant S0 as Root S0
-    participant L0 as Leaf L0
-    participant L1 as Leaf L1
-
-    AM->>S0: CONTROL addressed to S0
-    S0-->>S0: consume S0 records
-    AM->>S0: CONTROL addressed to L0
-    S0->>L0: forward unchanged
-    AM->>S0: CONTROL addressed to L1
-    S0->>L1: forward unchanged
-```
+For each management command, the AM sends a distinct `PM_OP_CONTROL`
+transaction to every target switch. `GROUP_STAGE`, `GROUP_COMMIT`, `OP_PREPARE`,
+and `OP_COMMIT` are therefore separate transactions, and one transaction may be
+fragmented across several frames. Each Ethernet destination is the target's
+local PRISM MAC and each payload contains only that target's local records. If
+the AM injects traffic through root `S0`, `S0` consumes locally addressed
+transactions and forwards those for `L0` and `L1` unchanged. The root never
+derives or rewrites child configuration.
 
 ### From discovery to active operation
 
@@ -241,18 +262,27 @@ Protocol 1.0 separates reusable topology from one invocation:
 
 A resource snapshot is only advisory. Successful `GROUP_STAGE` or `OP_PREPARE`
 is what reserves resources. If one switch rejects prepare, the AM aborts and
-releases every switch that prepared. Endpoints transmit only after every commit
-has been acknowledged.
+releases every switch that prepared. A successful `GROUP_COMMIT_RESPONSE` must
+report `INSTALLED`, and every `OP_COMMIT_RESPONSE` must report `ACTIVE`, before
+the AM can return the host-side grant.
+
+Before admission, the AM also validates one connected acyclic tree with exactly
+one root and one parent per non-root node. Every node uses the same collective
+semantic, reduction operator, element geometry, and final result format; each
+aggregation edge matches child output to parent input. Host-side route
+validation proves that every representative chunk reaches exactly the requested
+root rank for `REDUCE`, or every participating rank for `ALLREDUCE`.
 
 Commands are idempotent: retrying the same transaction does not apply it twice.
 A conflicting reuse of one Transaction ID returns `TXN_CONFLICT`.
 
 !!! warning "Prototype security scope"
 
-    The thesis prototype assumes a trusted AM and uses the explicit laboratory
-    profile. Authentication and cryptographic key management are outside the
-    current implementation scope; the numeric registry at the end of this page
-    reserves profiles for a future protected deployment.
+    The thesis prototype assumes a trusted host control plane (Host Coordinator
+    and AM) and uses the explicit laboratory profile. Authentication and
+    cryptographic key management are outside the current implementation scope;
+    the numeric registry at the end of this page reserves profiles for a future
+    protected deployment.
 
 ---
 
@@ -301,7 +331,10 @@ packet
 
 Protocol 1.0 uses `Major=1` and `Minor=0`. A different major version is
 incompatible. The opcode tells the local parser how to interpret the following
-header.
+header. The host request and `StartGrant` are API events outside this wire ABI,
+so the host-controlled startup model does not change the Protocol 1.0 layout.
+This is the canonical pre-release 1.0 specification; earlier unpublished draft
+layouts are superseded rather than maintained as compatibility variants.
 
 ## Protocol 1.0 packet layouts
 
@@ -515,9 +548,11 @@ packet
 ```
 
 `PROGRESS` travels in the opposite direction from the `DATA` or `RES` packet it
-controls. It does not mean that the whole collective has completed: it reports
-what the adjacent receiver accepted and how much more traffic it can receive.
-Each hop can therefore retransmit missing chunks locally without restarting the
+controls. It does not mean that the whole collective has started or completed:
+it reports what the adjacent receiver accepted and how much more traffic it can
+receive. It is never the tree-wide start signal; that signal comes from the Host
+Coordinator only after the AM has observed every switch as `ACTIVE`. Each direct
+link can therefore retransmit missing chunks locally without restarting the
 end-to-end operation.
 
 | Field | What it does | Why it is needed |
@@ -565,9 +600,11 @@ Progress flags are:
 
 ## Example: `REDUCE(SUM, root = rank1)`
 
-The topology has one spine (`S0`), two leaves (`L0`, `L1`), and four ranks.
-`rank1` is the only result destination. The same seven steps execute independently
-for every chunk.
+The topology has one **spine**, the upper-level switch `S0`, two leaf switches
+(`L0`, `L1`), and four ranks.
+`rank1` is the only result destination. Steps 1–3 establish one invocation;
+steps 4–7 may be pipelined independently for each chunk; steps 8–9 close the
+invocation after every chunk completes.
 
 For chunk `i`:
 
@@ -576,38 +613,62 @@ For chunk `i`:
 \mathbf{x}_0[i]+\mathbf{x}_1[i]+\mathbf{x}_2[i]+\mathbf{x}_3[i].
 \]
 
-### 1. Install the group and prepare the operation
+### 1. Ranks request the collective
 
-The AM sends a target-specific group descriptor to `S0`, `L0`, and `L1`.
-After every group is committed, it prepares and commits one Operation handle and
-its chunk geometry across the same tree.
-
-| Node | Local contributors | After local completion | Result next hop |
-|---|---|---|---|
-| `L0` | `rank0`, `rank1` | send one DATA partial to `S0` | `rank1` |
-| `L1` | `rank2`, `rank3` | send one DATA partial to `S0` | none |
-| `S0` | subtrees `L0`, `L1` | become the aggregation root | `L0` |
+The four ranks enter the same collective through their runtime. The Host
+Coordinator waits for the complete participant set, then asks the AM to begin
+the operation. No PRISM data packet is sent yet.
 
 <figure markdown="span">
-  ![The AM sends three target-specific frames through S0. S0 consumes its frame and forwards the other two unchanged to L0 and L1.](../../assets/images/protocol/reduce-lifecycle/01-target-specific-setup.png){ loading=lazy }
-  <figcaption>Each switch receives a distinct Group and Operation description for its own local state.</figcaption>
+  ![Four ranks arrive at a host-side barrier. The Host Coordinator then sends one BEGIN_OPERATION request to the separate Aggregation Manager while the spine-leaf tree remains inactive.](../../assets/images/protocol/reduce-lifecycle/01-host-collective-request.png){ loading=lazy }
+  <figcaption>The application request reaches the AM through a host API; it is not a PRISM Ethernet frame.</figcaption>
 </figure>
 
-The group remains reusable; vector length, arithmetic, completion, and retry
-state belong to this one operation.
+### 2. Configure the switch tree
 
-### 2. Submit rank contributions
+If the reusable Group is not already installed, the AM installs it first. It
+then prepares and commits one Operation handle and its chunk geometry on every
+target switch.
 
-Every rank sends one DATA packet for chunk `i` to its leaf. The header carries
-the complete Job/Group/Operation generations, leaf-local Contributor ID, and
-Chunk Index. Each leaf acknowledges safe acceptance.
+| Node | Local reduction | Result direction |
+|---|---|---|
+| `L0` | `rank0`, `rank1` → partial for `S0` | toward `rank1` |
+| `L1` | `rank2`, `rank3` → partial for `S0` | none |
+| `S0` | subtrees `L0`, `L1` → final result | toward `L0` |
 
 <figure markdown="span">
-  ![Four DATA packets carry chunk i from rank0 through rank3 to their local leaves.](../../assets/images/protocol/reduce-lifecycle/02-rank-contributions.png){ loading=lazy }
-  <figcaption>Each contribution travels only to its configured leaf; ACK/retry protects each direct link.</figcaption>
+  ![The figure conceptually summarizes target-specific setup paths through S0. For every management phase, S0 consumes its own transaction and forwards transactions for L0 and L1 unchanged.](../../assets/images/protocol/reduce-lifecycle/02-target-specific-switch-setup.png){ loading=lazy }
+  <figcaption>The drawing condenses several commands into one path per target; each real command remains a separate transaction, possibly fragmented.</figcaption>
 </figure>
 
-### 3. Complete the leaf reductions
+The Group can serve later invocations. Vector length, arithmetic, admission,
+completion, and retry state belong to this Operation.
+
+### 3. Release the ranks from the barrier
+
+The AM returns `StartGrant` only after `S0`, `L0`, and `L1` have all confirmed
+`ACTIVE`. The Host Coordinator then distributes the rank-specific grants. A
+leaf does not send a startup ACK: it has only local knowledge and cannot prove
+that the whole tree is ready.
+
+<figure markdown="span">
+  ![S0, L0, and L1 are all active. The Aggregation Manager returns START_GRANT to the Host Coordinator, which sends START to all four ranks over the host runtime channel.](../../assets/images/protocol/reduce-lifecycle/03-global-start-grant.png){ loading=lazy }
+  <figcaption>The host-side grant is the global readiness barrier; <code>PM_OP_COL_PROGRESS</code> begins only after DATA or RES traffic exists.</figcaption>
+</figure>
+
+### 4. Submit rank contributions
+
+After `START`, every rank sends one DATA packet for chunk `i` to its configured
+leaf. The header carries `Job ID`, `Group ID/Generation`, `Operation
+ID/Generation`, leaf-local Contributor ID, and Chunk Index. Each leaf
+acknowledges safe acceptance.
+
+<figure markdown="span">
+  ![Four DATA packets carry chunk i from rank0 through rank3 to their local leaves.](../../assets/images/protocol/reduce-lifecycle/04-rank-contributions.png){ loading=lazy }
+  <figcaption>Each contribution travels only to its configured leaf; ACK and retry protect each direct link.</figcaption>
+</figure>
+
+### 5. Complete the leaf reductions
 
 The leaves complete independently:
 
@@ -619,13 +680,13 @@ The leaves complete independently:
 \]
 
 <figure markdown="span">
-  ![L0 and L1 independently complete one local partial sum for chunk i.](../../assets/images/protocol/reduce-lifecycle/03-local-reduction.png){ loading=lazy }
+  ![L0 and L1 independently complete one local partial sum for chunk i.](../../assets/images/protocol/reduce-lifecycle/05-local-reduction.png){ loading=lazy }
   <figcaption>Contributor counting is local; the two leaves do not need to complete together.</figcaption>
 </figure>
 
 Each leaf retains the completed partial until the parent acknowledges it.
 
-### 4. Aggregate at the root switch
+### 6. Aggregate at the root switch
 
 `L0` and `L1` emit their partials as DATA. At `S0`, each whole child subtree is
 one local contributor identified by the child's configured
@@ -638,45 +699,51 @@ After both partials are accepted, `S0` computes the final chunk:
 \]
 
 <figure markdown="span">
-  ![L0 and L1 send one DATA partial each to S0, which computes the final chunk.](../../assets/images/protocol/reduce-lifecycle/04-root-reduction.png){ loading=lazy }
+  ![L0 and L1 send one DATA partial each to S0, which computes the final chunk.](../../assets/images/protocol/reduce-lifecycle/06-root-reduction.png){ loading=lazy }
   <figcaption>Four rank packets become two partial packets before reaching the aggregation root.</figcaption>
 </figure>
 
-### 5. Route the result to `rank1`
+### 7. Route the result to `rank1`
 
 The route at `S0` selects a replication entry toward `L0`; the route at `L0`
 selects `rank1`. `L1` and the other ranks receive no result traffic.
 
 <figure markdown="span">
-  ![The left panel shows PM_OP_COL_RES moving down the spine-leaf tree from S0 to L0 and rank1. The right panel shows PM_OP_COL_PROGRESS acknowledgments returning from rank1 to L0 and from L0 to S0.](../../assets/images/protocol/reduce-lifecycle/05-selective-result-routing.png){ loading=lazy }
+  ![The left panel shows PM_OP_COL_RES moving down the spine-leaf tree from S0 to L0 and rank1. The right panel shows PM_OP_COL_PROGRESS acknowledgments returning from rank1 to L0 and from L0 to S0.](../../assets/images/protocol/reduce-lifecycle/07-result-and-acks.png){ loading=lazy }
   <figcaption>Result packets move toward <code>rank1</code>; each ACK returns only to the immediately previous sender.</figcaption>
 </figure>
 
 Ethernet does not tell a sender that the next node accepted a packet. Therefore
 `S0` keeps a replay copy until `L0` acknowledges Path A, and `L0` keeps its own
-copy until `rank1` acknowledges Path B. A missing packet or ACK triggers a retry;
-an already accepted result is not forwarded or delivered twice, but is
-acknowledged again. The duplicate key is the Operation handle, local Result Path
-ID, and Chunk Index.
+copy until `rank1` acknowledges Path B. A missing packet or ACK triggers a retry.
+A switch suppresses a result it has already accepted on the same local Result
+Path and acknowledges the duplicate again. At the final rank, Protocol 1.0
+requires the endpoint/runtime to deduplicate by Operation handle, Result Path
+ID, and Chunk Index until release; the switch protocol alone does not claim
+exactly-once application delivery.
 
-### 6. Complete the operation
+### 8. Complete the operation
 
 After all required result-path acknowledgments, heavy chunk buffers may be
 reused, but the operation retains its handle and completion tombstones so that
 late duplicates are still rejected.
 
 <figure markdown="span">
-  ![S0, L0, and L1 each free their local chunk buffers after all required acknowledgments, while Operation and Group state remain installed.](../../assets/images/protocol/reduce-lifecycle/06-delivery-and-state-release.png){ loading=lazy }
+  ![S0, L0, and L1 each free their local chunk buffers after all required acknowledgments, while Operation and Group state remain installed.](../../assets/images/protocol/reduce-lifecycle/08-operation-complete.png){ loading=lazy }
   <figcaption><code>COMPLETE</code> reclaims heavy per-chunk storage locally at every switch; it does not free the Operation handle.</figcaption>
 </figure>
 
-### 7. Release the Operation state
+Once every switch reports `COMPLETE`, the AM can report tree-wide completion to
+the Host Coordinator.
 
-The AM waits until every switch is complete, sends one target-specific
-`OP_RELEASE` request to each switch, and waits for every response.
+### 9. Release the Operation state
+
+After completion, the Host Coordinator requests release. The AM sends one
+target-specific `OP_RELEASE` to each switch and waits for every response before
+confirming release to the host side.
 
 <figure markdown="span">
-  ![The AM sends separate OP_RELEASE requests addressed to S0, L0, and L1. Each switch frees its local Operation state, while the reusable Group setup remains installed.](../../assets/images/protocol/reduce-lifecycle/07-operation-release.png){ loading=lazy }
+  ![The AM sends separate OP_RELEASE requests addressed to S0, L0, and L1. Each switch frees its local Operation state, while the reusable Group setup remains installed.](../../assets/images/protocol/reduce-lifecycle/09-operation-release.png){ loading=lazy }
   <figcaption>Release happens independently at <code>S0</code>, <code>L0</code>, and <code>L1</code>; the spine only forwards non-local requests.</figcaption>
 </figure>
 

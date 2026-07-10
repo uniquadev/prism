@@ -48,16 +48,23 @@ ACK esplicito per path e ammissione atomica.
 
 ## Recovery distribuito e osservabilità
 
-Un AM di produzione richiederà journal durevoli, takeover tra repliche del
-manager, rilevamento di gap negli eventi, telemetria della replay pressure e
+Un AM di produzione richiederà journal durevoli, takeover tra repliche dell'AM,
+rilevamento di gap negli eventi, telemetria della replay pressure e
 reinstallazione coordinata dopo una variazione del Device Boot ID. `OP_STATUS`
 resta la fonte autorevole; gli eventi sono un'ottimizzazione. Uno schema futuro
 potrà standardizzare contatori e trace senza esporre indirizzi privati delle
 tabelle hardware.
 
+Se Host Coordinator e AM sono servizi separati, anche il loro RPC richiede
+identità stabili delle richieste, semantiche di riconnessione e replay degli
+stati di disponibilità e completamento. Il recovery non deve mai generare uno
+start grant per i rank finché l'AM non ha ristabilito che ogni switch target è
+`ACTIVE`.
+
 ## Relazione con sistemi precedenti
 
-SHARP motiva la separazione concettuale tra job, gruppo collettivo riutilizzabile,
-singola richiesta e risorse limitate di aggregazione. PRISM usa questa lezione
-architetturale, ma non dichiara compatibilità di protocollo, wire, API,
-management o trasporto con NVIDIA SHARP o NVLink SHARP.
+SHARP motiva la separazione tra integrazione host delle collettive e aggregation
+manager, oltre alla distinzione tra gruppo riutilizzabile, singola richiesta e
+risorse limitate di aggregazione. PRISM usa queste idee soltanto come lezioni
+architetturali e non dichiara compatibilità di protocollo, wire, API, management
+o trasporto con NVIDIA SHARP o NVLink SHARP.

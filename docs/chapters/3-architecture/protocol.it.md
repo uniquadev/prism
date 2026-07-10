@@ -33,10 +33,10 @@ gestione o sicurezza.
     risultato o gestione dell'avanzamento prima che il payload numerico raggiunga
     il motore delle collettive.
 
-Questa pagina spiega prima il protocollo seguendo una riduzione completa, dalla
-configurazione al rilascio. Le sezioni finali raccolgono poi i layout, i registri
-numerici e le regole di validazione esatte del Protocollo 1.0 necessarie a RTL e
-software host.
+Questa pagina introduce inoltro, identità, suddivisione in chunk e avvio, quindi
+presenta i layout dei pacchetti. Segue lo storyboard di una riduzione completa;
+le sezioni finali raccolgono i registri numerici e le regole di validazione del
+Protocollo 1.0 necessarie a RTL e software host.
 
 ---
 
@@ -52,16 +52,16 @@ La classificazione PRISM procede dal frame Ethernet esterno verso l'interno:
 
 ```mermaid
 flowchart LR
-    RX["Ethernet frame"] --> ET{"PRISM EtherType?"}
-    ET -->|No| L2["Outer L2 policy"]
-    ET -->|Yes| OWN{"Destination MAC local?"}
+    RX["Frame Ethernet"] --> ET{"EtherType PRISM?"}
+    ET -->|No| L2["Politica L2 esterna"]
+    ET -->|Sì| OWN{"MAC di destinazione locale?"}
     OWN -->|No| L2
-    OWN -->|Yes| OP{"Opcode"}
-    OP -->|CONTROL| CTRL["Control path"]
-    OP -->|COL_DATA| DATA["Collective engine"]
-    OP -->|COL_RES| RES["Result path"]
-    OP -->|COL_PROGRESS| ACK["ACK / retry path"]
-    OP -->|Unknown| BAD["Invalid packet"]
+    OWN -->|Sì| OP{"Opcode"}
+    OP -->|CONTROL| CTRL["Percorso di controllo"]
+    OP -->|COL_DATA| DATA["Motore collettivo"]
+    OP -->|COL_RES| RES["Percorso del risultato"]
+    OP -->|COL_PROGRESS| ACK["Percorso ACK / retry"]
+    OP -->|Sconosciuto| BAD["Pacchetto non valido"]
 ```
 
 Il MAC di destinazione e l'opcode rispondono a due domande diverse:
@@ -78,8 +78,8 @@ di gestione. Il prototipo usa normalmente l'inoltro trasparente.
 ## Identificatori delle collettive
 
 Questa sezione definisce come i pacchetti riferiscono, senza ambiguità, le
-diverse entità di una collettiva. Il protocollo non separa la topologia fisica
-della rete: separa tre livelli logici con durate diverse:
+diverse entità di una collettiva. Distingue tre livelli logici con durate
+diverse:
 
 1. il **gruppo**, cioè l'albero dei contributori configurato negli switch e
    riutilizzabile;
@@ -176,13 +176,21 @@ inoltre `child.output_format == parent.input_format` su ogni arco di
 aggregazione. L'eventuale padding minimo Ethernet non viene interpretato come
 dato del vettore.
 
+`PM_OP_COL_RES` non contiene un campo che dichiari il formato del singolo
+pacchetto. Il Protocollo 1.0 richiede quindi un unico `output_format` per tutto
+l'albero, uguale al formato del risultato prodotto dalla radice. Una foglia può
+convertire l'input prima di emettere il primo parziale, per esempio da INT8 a
+FP32, ma i livelli successivi non possono introdurre un'altra conversione wire.
+Gli alberi che richiedono formati intermedi e finali diversi non sono supportati
+nella versione 1.0.
+
 I chunk possono arrivare in ordine diverso all'interno della finestra di
 ricezione ammessa. È il Chunk Index, non l'ordine di arrivo, a selezionare lo
 stato temporaneo corretto.
 
 ---
 
-## Classi di pacchetto del data plane
+## Classi di pacchetto PRISM
 
 Dopo aver stabilito la proprietà Ethernet, l'opcode seleziona uno dei seguenti
 percorsi:
@@ -204,40 +212,54 @@ adiacenti, per esempio `rank0 -> L0` oppure `L0 -> S0`.
 
 ## Configurazione in-band
 
-L'**Aggregation Manager** (AM) conosce i rank partecipanti, l'albero degli switch
-e l'aritmetica richiesta. **In-band** significa che i suoi comandi viaggiano come
-pacchetti Ethernet attraverso le stesse porte fisiche dei dati collettivi. Dopo
-il parsing, i pacchetti di controllo seguono un percorso separato e non entrano
-mai nell'accumulatore numerico.
+Il lato applicativo e quello di rete hanno responsabilità diverse. Un
+**Host Coordinator** raccoglie i rank partecipanti e la loro richiesta
+collettiva. L'**Aggregation Manager** (AM) traduce la richiesta in un piano per
+l'intero albero usando topologia, capability e risorse disponibili degli switch.
 
-Per esempio, il prototipo pensato per usare OpenNIC come shell FPGA: OpenNIC fornisce le
+Qui **in-band** indica in modo specifico il controllo tra AM e switch: i comandi
+viaggiano come pacchetti Ethernet attraverso le stesse porte fisiche dei dati
+collettivi. Dopo il parsing seguono un percorso separato e non entrano mai
+nell'accumulatore numerico.
+
+Per esempio, il prototipo può usare OpenNIC come shell FPGA: OpenNIC fornisce le
 porte verso l'host e il percorso driver, mentre PRISM implementa il protocollo
 collettivo nel datapath programmabile. Il setup in-band permette quindi di
 avviare gli esperimenti senza richiedere prima un processore di gestione separato.
 
+### Avvio controllato dall'host
+
+Una chiamata collettiva non autorizza i rank a trasmettere immediatamente. Il
+runtime porta prima tutti i rank attesi a una barriera lato host; l'Host
+Coordinator chiede quindi all'AM di attivare un'operazione. Soltanto dopo che
+ogni switch destinatario ha riportato `ACTIVE`, l'AM restituisce uno
+`StartGrant`, che il coordinatore distribuisce ai rank tramite il canale host
+affidabile del runtime.
+
+Il grant fornisce a ogni rank `Job ID`, `Group ID/Generation`, `Operation
+ID/Generation`, Contributor ID locale, MAC della foglia destinataria, MAC di
+destinazione del risultato, formati wire, geometria dei chunk e finestra
+realmente ammessa da quella foglia. Per `REDUCE`, la richiesta host identifica
+anche l'unico rank destinatario. Se uno switch rifiuta preparazione o commit,
+l'AM annulla e rilascia lo stato parziale; il coordinatore risveglia tutti i rank
+in attesa con lo stesso errore e nessuno riceve il grant.
+
+Il coordinamento host rimane intenzionalmente fuori dal protocollo Ethernet
+PRISM. Nel prototipo coordinatore e AM possono condividere un processo e usare
+una chiamata di funzione; in un deployment possono comunicare tramite RPC.
+Restano due ruoli logici distinti, e né la richiesta host né `StartGrant`
+introducono un opcode `PM_*`.
+
 ### Consegna specifica per ciascun destinatario
 
-L'AM invia una transazione `PM_OP_CONTROL` distinta per ogni switch destinatario.
-La destinazione Ethernet è il MAC PRISM locale di quello switch e il payload
-contiene soltanto i suoi record locali. Se l'AM immette i frame attraverso la
-radice `S0`, `S0` consuma la propria transazione e inoltra senza modifiche quelle
-indirizzate a `L0` e `L1`. La radice non deriva né riscrive la configurazione dei
-figli.
-
-```mermaid
-sequenceDiagram
-    participant AM
-    participant S0 as Root S0
-    participant L0 as Leaf L0
-    participant L1 as Leaf L1
-
-    AM->>S0: CONTROL addressed to S0
-    S0-->>S0: consume S0 records
-    AM->>S0: CONTROL addressed to L0
-    S0->>L0: forward unchanged
-    AM->>S0: CONTROL addressed to L1
-    S0->>L1: forward unchanged
-```
+Per ogni comando di gestione, l'AM invia una transazione `PM_OP_CONTROL`
+distinta a ciascuno switch destinatario. `GROUP_STAGE`, `GROUP_COMMIT`,
+`OP_PREPARE` e `OP_COMMIT` sono quindi transazioni separate; una singola
+transazione può inoltre essere frammentata in più frame. La destinazione
+Ethernet è il MAC PRISM locale del destinatario e il payload contiene soltanto i
+suoi record. Se l'AM immette il traffico attraverso la radice `S0`, questa
+consuma le transazioni locali e inoltra senza modifiche quelle per `L0` e `L1`.
+La radice non deriva né riscrive la configurazione dei figli.
 
 ### Dalla scoperta all'operazione attiva
 
@@ -252,8 +274,18 @@ Il Protocollo 1.0 separa la topologia riutilizzabile da una singola invocazione:
 
 Una fotografia delle risorse è soltanto indicativa. Il successo di `GROUP_STAGE`
 o `OP_PREPARE` è ciò che riserva realmente le risorse. Se uno switch rifiuta la
-preparazione, l'AM annulla e rilascia ogni switch che l'aveva accettata. Gli
-endpoint trasmettono solo dopo che ogni commit è stato confermato.
+preparazione, l'AM annulla e rilascia ogni switch che l'aveva accettata. Una
+`GROUP_COMMIT_RESPONSE` valida deve riportare `INSTALLED` e ogni
+`OP_COMMIT_RESPONSE` deve riportare `ACTIVE` prima che l'AM possa restituire il
+grant lato host.
+
+Prima dell'ammissione, l'AM convalida anche un unico albero connesso e aciclico,
+con una sola radice e un parent per ogni nodo non radice. Tutti i nodi usano la
+stessa semantica collettiva, lo stesso operatore, la stessa geometria e lo stesso
+formato finale; ogni collegamento associa l'output del figlio all'input del
+parent. La validazione lato host dimostra inoltre che ogni chunk rappresentativo
+raggiunga esattamente il rank richiesto da `REDUCE` oppure tutti i rank
+partecipanti ad `ALLREDUCE`.
 
 I comandi sono idempotenti: ripetere la stessa transazione non la applica due
 volte. Un riutilizzo in conflitto dello stesso Transaction ID restituisce
@@ -261,10 +293,11 @@ volte. Un riutilizzo in conflitto dello stesso Transaction ID restituisce
 
 !!! warning "Ambito della sicurezza nel prototipo"
 
-    Il prototipo della tesi assume un AM fidato e usa il profilo esplicito di
-    laboratorio. Autenticazione e gestione delle chiavi crittografiche sono fuori
-    dall'ambito dell'implementazione corrente; il registro numerico in fondo alla
-    pagina riserva profili per una futura installazione protetta.
+    Il prototipo della tesi assume un piano di controllo host fidato (Host Coordinator
+    e AM) e usa il profilo esplicito di laboratorio. Autenticazione e gestione
+    delle chiavi crittografiche sono fuori dall'ambito dell'implementazione
+    corrente; il registro numerico in fondo alla pagina riserva profili per una
+    futura installazione protetta.
 
 ---
 
@@ -313,7 +346,11 @@ packet
 
 Il Protocollo 1.0 usa `Major=1` e `Minor=0`. Una versione major diversa è
 incompatibile. L'opcode indica al parser locale come interpretare l'header che
-segue.
+segue. La richiesta host e `StartGrant` sono eventi API esterni a questo wire
+ABI: il modello di avvio controllato dall'host non modifica quindi il layout del
+Protocollo 1.0. Questa è la specifica 1.0 canonica prima del rilascio: i layout
+delle bozze precedenti non pubblicate sono sostituiti, non mantenuti come
+varianti di compatibilità.
 
 ## Layout dei pacchetti del Protocollo 1.0
 
@@ -536,10 +573,12 @@ packet
 ```
 
 `PROGRESS` viaggia nella direzione opposta rispetto al `DATA` o `RES` che sta
-controllando. Non indica che l'intera collettiva sia terminata: descrive ciò che
-il ricevitore adiacente ha accettato e quanto altro traffico può ricevere. In
-questo modo ogni salto può ritrasmettere localmente i chunk mancanti senza
-riavviare l'operazione end-to-end.
+controllando. Non indica che l'intera collettiva sia iniziata o terminata:
+descrive ciò che il ricevitore adiacente ha accettato e quanto altro traffico
+può ricevere. Non costituisce mai il segnale di avvio dell'albero: tale segnale
+proviene dall'Host Coordinator soltanto dopo che l'AM ha osservato tutti gli
+switch in stato `ACTIVE`. In questo modo ogni collegamento diretto può
+ritrasmettere localmente i chunk mancanti senza riavviare l'operazione end-to-end.
 
 | Campo | A che cosa serve | Perché è necessario |
 |---|---|---|
@@ -587,9 +626,12 @@ I flag PROGRESS sono:
 
 ## Esempio: `REDUCE(SUM, root = rank1)`
 
-La topologia contiene uno spine (`S0`), due foglie (`L0`, `L1`) e quattro rank.
-`rank1` è l'unico destinatario del risultato. Gli stessi sette passaggi vengono
-eseguiti indipendentemente per ogni chunk.
+La topologia contiene uno **spine**, cioè lo switch di livello superiore `S0`,
+due switch foglia (`L0`, `L1`) e quattro rank.
+`rank1` è l'unico destinatario del risultato. I passaggi 1–3 stabiliscono una
+singola invocazione; i passaggi 4–7 possono procedere in pipeline per ciascun
+chunk; i passaggi 8–9 chiudono l'invocazione dopo il completamento di tutti i
+chunk.
 
 Per il chunk `i`:
 
@@ -598,38 +640,63 @@ Per il chunk `i`:
 \mathbf{x}_0[i]+\mathbf{x}_1[i]+\mathbf{x}_2[i]+\mathbf{x}_3[i].
 \]
 
-### 1. Installare il gruppo e preparare l'operazione
+### 1. Richiedere la collettiva
 
-L'AM invia a `S0`, `L0` e `L1` un descrittore del gruppo specifico per il
-destinatario. Dopo il commit di ogni gruppo, prepara e attiva un Operation handle
-e la relativa geometria dei chunk sullo stesso albero.
-
-| Nodo | Contributori locali | Dopo il completamento locale | Destinazione successiva del risultato |
-|---|---|---|---|
-| `L0` | `rank0`, `rank1` | invia una somma parziale DATA a `S0` | `rank1` |
-| `L1` | `rank2`, `rank3` | invia una somma parziale DATA a `S0` | nessuna |
-| `S0` | sottoalberi `L0`, `L1` | diventa la radice di aggregazione | `L0` |
+I quattro rank entrano nella stessa collettiva tramite il runtime. L'Host
+Coordinator attende l'intero insieme dei partecipanti e chiede quindi all'AM di
+avviare l'operazione. In questa fase non viene ancora inviato alcun pacchetto
+dati PRISM.
 
 <figure markdown="span">
-  ![L'AM invia tre frame specifici per destinazione attraverso S0. S0 consuma il proprio frame e inoltra gli altri due invariati verso L0 e L1.](../../assets/images/protocol/reduce-lifecycle/01-target-specific-setup.png){ loading=lazy }
-  <figcaption>Ogni switch riceve una descrizione distinta di Group e Operation relativa al solo stato locale.</figcaption>
+  ![I quattro rank raggiungono una barriera lato host. L'Host Coordinator invia quindi una sola richiesta BEGIN_OPERATION all'Aggregation Manager separato, mentre l'albero spine-leaf è ancora inattivo.](../../assets/images/protocol/reduce-lifecycle/01-host-collective-request.png){ loading=lazy }
+  <figcaption>La richiesta applicativa raggiunge l'AM tramite un'API host, non come frame Ethernet PRISM.</figcaption>
 </figure>
 
-Il gruppo rimane riutilizzabile; lunghezza del vettore, aritmetica, completamento
-e stato delle ritrasmissioni appartengono a questa singola operazione.
+### 2. Configurare l'albero degli switch
 
-### 2. Inviare i contributi dei rank
+Se il Group riutilizzabile non è già installato, l'AM lo installa per primo.
+Prepara quindi un handle di Operation e la relativa geometria dei chunk, poi ne
+esegue il commit su ogni switch destinatario.
 
-Ogni rank invia alla propria foglia un pacchetto DATA per il chunk `i`. L'header
-contiene le generazioni complete di Job/Group/Operation, il Contributor ID locale
-alla foglia e il Chunk Index. Ogni foglia conferma l'accettazione sicura.
+| Nodo | Riduzione locale | Direzione del risultato |
+|---|---|---|
+| `L0` | `rank0`, `rank1` → parziale per `S0` | verso `rank1` |
+| `L1` | `rank2`, `rank3` → parziale per `S0` | nessuna |
+| `S0` | sottoalberi `L0`, `L1` → risultato finale | verso `L0` |
 
 <figure markdown="span">
-  ![Quattro pacchetti PM_OP_COL_DATA trasportano il chunk i da rank0, rank1, rank2 e rank3 alle rispettive foglie.](../../assets/images/protocol/reduce-lifecycle/02-rank-contributions.png){ loading=lazy }
+  ![La figura riassume in modo concettuale i percorsi del setup specifico per destinatario attraverso S0. In ogni fase di gestione, S0 consuma la propria transazione e inoltra invariate quelle per L0 e L1.](../../assets/images/protocol/reduce-lifecycle/02-target-specific-switch-setup.png){ loading=lazy }
+  <figcaption>Il disegno condensa più comandi in un percorso per destinatario; ogni comando reale resta una transazione separata, eventualmente frammentata.</figcaption>
+</figure>
+
+Il Group può servire invocazioni successive. Lunghezza del vettore, aritmetica,
+ammissione, completamento e retry appartengono invece a questa Operation.
+
+### 3. Sbloccare i rank
+
+L'AM restituisce `StartGrant` soltanto dopo la conferma `ACTIVE` da parte di
+`S0`, `L0` e `L1`. L'Host Coordinator distribuisce quindi i grant specifici per
+rank. Una foglia non invia un ACK di avvio: possiede soltanto conoscenza locale
+e non può dimostrare che l'intero albero sia pronto.
+
+<figure markdown="span">
+  ![S0, L0 e L1 sono tutti attivi. L'Aggregation Manager restituisce START_GRANT all'Host Coordinator, che invia START ai quattro rank tramite il canale del runtime host.](../../assets/images/protocol/reduce-lifecycle/03-global-start-grant.png){ loading=lazy }
+  <figcaption>Il grant lato host è la barriera di disponibilità globale; <code>PM_OP_COL_PROGRESS</code> compare soltanto dopo l'inizio del traffico DATA o RES.</figcaption>
+</figure>
+
+### 4. Inviare i contributi dei rank
+
+Dopo `START`, ogni rank invia alla foglia configurata un pacchetto DATA per il
+chunk `i`. L'header contiene `Job ID`, `Group ID/Generation`, `Operation
+ID/Generation`, Contributor ID locale alla foglia e Chunk Index. Ogni foglia
+conferma l'accettazione sicura.
+
+<figure markdown="span">
+  ![Quattro pacchetti PM_OP_COL_DATA trasportano il chunk i da rank0, rank1, rank2 e rank3 alle rispettive foglie.](../../assets/images/protocol/reduce-lifecycle/04-rank-contributions.png){ loading=lazy }
   <figcaption>Ogni contributo viaggia soltanto verso la foglia configurata; ACK e ritrasmissione proteggono ogni collegamento diretto.</figcaption>
 </figure>
 
-### 3. Completare le riduzioni nelle foglie
+### 5. Completare le riduzioni nelle foglie
 
 Le foglie si completano in modo indipendente:
 
@@ -641,14 +708,14 @@ Le foglie si completano in modo indipendente:
 \]
 
 <figure markdown="span">
-  ![L0 e L1 completano in modo indipendente una somma parziale locale per il chunk i.](../../assets/images/protocol/reduce-lifecycle/03-local-reduction.png){ loading=lazy }
+  ![L0 e L1 completano in modo indipendente una somma parziale locale per il chunk i.](../../assets/images/protocol/reduce-lifecycle/05-local-reduction.png){ loading=lazy }
   <figcaption>Il conteggio dei contributori è locale; le due foglie non devono completarsi nello stesso momento.</figcaption>
 </figure>
 
 Ogni foglia conserva la somma parziale completata finché il parent non la
 conferma.
 
-### 4. Aggregare nello switch radice
+### 6. Aggregare nello switch radice
 
 `L0` e `L1` emettono le proprie somme parziali come DATA. In `S0`, ciascun
 sottoalbero figlio costituisce un contributore locale, identificato dal
@@ -661,45 +728,51 @@ Dopo aver accettato entrambe le somme parziali, `S0` calcola il chunk finale:
 \]
 
 <figure markdown="span">
-  ![L0 e L1 inviano a S0 una somma parziale PM_OP_COL_DATA ciascuno; S0 calcola il chunk finale.](../../assets/images/protocol/reduce-lifecycle/04-root-reduction.png){ loading=lazy }
+  ![L0 e L1 inviano a S0 una somma parziale PM_OP_COL_DATA ciascuno; S0 calcola il chunk finale.](../../assets/images/protocol/reduce-lifecycle/06-root-reduction.png){ loading=lazy }
   <figcaption>Quattro pacchetti dei rank diventano due pacchetti parziali prima di raggiungere la radice di aggregazione.</figcaption>
 </figure>
 
-### 5. Instradare il risultato verso `rank1`
+### 7. Instradare il risultato verso `rank1`
 
 La rotta in `S0` seleziona una voce di replica verso `L0`; quella in `L0`
 seleziona `rank1`. `L1` e gli altri rank non ricevono traffico di risultato.
 
 <figure markdown="span">
-  ![Il pannello sinistro mostra PM_OP_COL_RES che scende nell'albero spine-leaf da S0 a L0 e rank1. Il pannello destro mostra gli ACK PM_OP_COL_PROGRESS che tornano da rank1 a L0 e da L0 a S0.](../../assets/images/protocol/reduce-lifecycle/05-selective-result-routing.png){ loading=lazy }
+  ![Il pannello sinistro mostra PM_OP_COL_RES che scende nell'albero spine-leaf da S0 a L0 e rank1. Il pannello destro mostra gli ACK PM_OP_COL_PROGRESS che tornano da rank1 a L0 e da L0 a S0.](../../assets/images/protocol/reduce-lifecycle/07-result-and-acks.png){ loading=lazy }
   <figcaption>I risultati viaggiano verso <code>rank1</code>; ogni ACK torna soltanto al mittente immediatamente precedente.</figcaption>
 </figure>
 
 Ethernet non comunica al mittente che il nodo successivo ha accettato il
 pacchetto. `S0` conserva quindi una copia finché `L0` conferma il Path A; `L0`
 conserva la propria finché `rank1` conferma il Path B. La perdita del pacchetto o
-dell'ACK causa un retry; un risultato già accettato non viene inoltrato o
-consegnato due volte, ma viene confermato di nuovo. La chiave del duplicato è
-l'Operation handle, il Result Path ID locale e il Chunk Index.
+dell'ACK causa una ritrasmissione. Uno switch sopprime un risultato già accettato
+sullo stesso Result Path locale e conferma nuovamente il duplicato. Nel rank
+finale, il Protocollo 1.0 richiede al runtime/endpoint di deduplicare usando
+Operation handle, Result Path ID e Chunk Index fino al rilascio; il solo
+protocollo degli switch non garantisce una consegna applicativa exactly-once.
 
-### 6. Completare l'operazione
+### 8. Completare l'operazione
 
 Dopo gli ACK di tutti i Result Path richiesti, i buffer pesanti dei chunk possono
 essere riutilizzati. L'operazione conserva però handle e tombstone di completamento,
 così da respingere ancora i duplicati tardivi.
 
 <figure markdown="span">
-  ![S0, L0 e L1 liberano ciascuno i propri buffer locali dei chunk dopo tutti gli ACK richiesti, mentre lo stato di Operation e Group rimane installato.](../../assets/images/protocol/reduce-lifecycle/06-delivery-and-state-release.png){ loading=lazy }
+  ![S0, L0 e L1 liberano ciascuno i propri buffer locali dei chunk dopo tutti gli ACK richiesti, mentre lo stato di Operation e Group rimane installato.](../../assets/images/protocol/reduce-lifecycle/08-operation-complete.png){ loading=lazy }
   <figcaption><code>COMPLETE</code> recupera localmente lo storage pesante per chunk in ogni switch; non libera l'Operation handle.</figcaption>
 </figure>
 
-### 7. Rilasciare lo stato dell'Operation
+Quando ogni switch riporta `COMPLETE`, l'AM può comunicare il completamento
+globale all'Host Coordinator.
 
-L'AM attende che ogni switch sia completo, invia a ciascuno una richiesta
-`OP_RELEASE` specifica per destinazione e aspetta tutte le risposte.
+### 9. Rilasciare lo stato dell'Operation
+
+Dopo il completamento, l'Host Coordinator richiede il rilascio. L'AM invia a
+ciascuno switch un `OP_RELEASE` specifico per destinazione e attende tutte le
+risposte prima di confermare il rilascio al lato host.
 
 <figure markdown="span">
-  ![L'AM invia richieste OP_RELEASE separate indirizzate a S0, L0 e L1. Ogni switch libera il proprio stato locale di Operation, mentre la configurazione riutilizzabile del Group resta installata.](../../assets/images/protocol/reduce-lifecycle/07-operation-release.png){ loading=lazy }
+  ![L'AM invia richieste OP_RELEASE separate indirizzate a S0, L0 e L1. Ogni switch libera il proprio stato locale di Operation, mentre la configurazione riutilizzabile del Group resta installata.](../../assets/images/protocol/reduce-lifecycle/09-operation-release.png){ loading=lazy }
   <figcaption>Il rilascio avviene indipendentemente in <code>S0</code>, <code>L0</code> e <code>L1</code>; lo spine inoltra soltanto le richieste non locali.</figcaption>
 </figure>
 

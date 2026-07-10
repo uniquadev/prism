@@ -1088,7 +1088,7 @@ class ReplayCache:
 
 
 class GenerationStore:
-    """Small durable generation allocator used by the host manager."""
+    """Small durable generation allocator used by the AM-side manager."""
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path
