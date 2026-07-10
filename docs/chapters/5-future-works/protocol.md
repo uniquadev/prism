@@ -1,66 +1,66 @@
 # 5.1 Protocol
 
-The following points are intentionally outside the first PRISM thesis
-protocol.
+Protocol 1.0 freezes object identity, management transactions, two-phase
+admission, phase bitmaps and reliable hop-by-hop delivery. Future revisions
+should extend those contracts without weakening generation safety or treating
+Ethernet loss as silent success.
 
-## Reliable completion and aborts
+## Exact partials across a hierarchy
 
-PRISM v0.1 does not define `COL_ABORT`, acknowledgments, negative
-acknowledgments, retransmission, or timeout-driven recovery packets. Malformed
-packets, duplicate contributions, missing routes, unsupported opcodes, and other
-invalid conditions are reported through debug-visible or register-visible
-counters.
+The most important arithmetic extension is a lossless partial-accumulator wire
+format. A local exact accumulator serialized as FP32 rounds at every tree level;
+it cannot produce a globally exact, tree-independent reduction. A future
+`EXACT_PARTIAL_WIRE` profile must specify representation width, normalization,
+special-value flags, overflow, merge rules, payload geometry and capability
+negotiation before a multi-level exact tuple can be advertised.
 
-A production protocol could add:
+## Scalable completion memory
 
-- setup acknowledgments or status responses;
-- explicit collective abort messages;
-- timeout policy and AM-driven cleanup;
-- retry or replay semantics for non-lossless fabrics;
-- per-context completion notifications.
+The full phase bitmap deliberately makes duplicate suppression independent of
+the active aggregation-slot window. Implementations can study banked BRAM/URAM,
+external memory, compressed sparse maps, hierarchical summaries or page-on-
+demand allocation. Any optimization must preserve exact per-chunk tombstones,
+constant-time completion counters and atomic resource accounting visible during
+`OP_PREPARE`.
 
-## Reduce-scatter
+## Congestion-aware reliability
 
-The result route table is already chunk-range based, so `REDUCE_SCATTER` can be
-added without replacing the result-dissemination model. The AM would install
-different result routes for different chunk ranges, sending each range only to
-the branch that owns it.
+The required `PM_OP_COL_PROGRESS` profile provides ACK, selective ACK, receive
+window and retry information. A later congestion profile could add explicit
+rate hints, ECN coupling, adaptive retransmission timers and fairness between
+concurrent operations. Such policy must remain separate from result payload
+distribution and must retain each result until every Result Path acknowledges.
 
-The first thesis protocol keeps `REDUCE_SCATTER` out of scope to focus on
-`REDUCE` and `ALLREDUCE`.
+## Authentication profiles
 
-## Dynamic vector length
+Version 1.0 negotiates authenticated external channels or in-protocol
+authentication without selecting a cryptographic primitive that the RTL does
+not implement. Future work may freeze a concrete tag, key derivation,
+anti-replay sequence, rekey procedure and data-packet authentication profile.
+Formal analysis should cover forged contributor identities, stale generations,
+management replay, lease takeover and reset recovery.
 
-The baseline protocol obtains vector length from the installed collective
-context. A future revision could carry vector size or element count in the first
-data packet of an operation, but this requires additional rules for out-of-order
-chunks, context activation, and operation-instance lifetime.
+## Additional collectives and routing
 
-## Control-plane transport
+`ALLREDUCE` and `REDUCE_SCATTER` have assigned semantic codes, but a switch may
+advertise only implemented semantics. Future profiles can define scatter
+ownership, segmented tensors, non-contiguous result placement, topology changes,
+and additional associative operators. Each extension still needs invariant
+element/chunk geometry, explicit per-path acknowledgment and atomic admission.
 
-The logical Aggregation Manager interface is independent from its transport.
-Future implementations may map the same setup records to:
+## Distributed recovery and observability
 
-- AXI-Lite;
-- PCIe BAR registers;
-- firmware calls;
-- a software control-plane API;
-- a secure management network.
+A production AM will need durable operation journals, takeover between manager
+replicas, event-gap detection, telemetry for replay pressure and coordinated
+reinstallation after Device Boot ID changes. The authoritative recovery path
+remains `OP_STATUS`; events are an optimization. A future diagnostic schema may
+standardize counters and traces without exposing implementation-private table
+addresses.
 
-## Security and admission control
+## Relationship to prior systems
 
-In-band setup is useful for simulation and FPGA bring-up, but it is not a secure
-production control plane. A production deployment would need authentication,
-authorization, filtering, and replay protection for setup records.
-
-## Packet-size profiles
-
-The current protocol assumes standard non-jumbo Ethernet payloads. Jumbo-frame
-profiles and MTU negotiation are future work.
-
-## Topology discovery
-
-The first prototype assumes that the AM is given topology and rank-placement
-information. A future topology explorer could discover switch identities, local
-ports, reachable ranks, and parent/child relationships before installing
-collective contexts.
+SHARP motivates the conceptual separation between a job, a reusable collective
+group, one collective request and bounded aggregation resources. PRISM uses
+that separation as an architectural lesson only. It does not claim protocol,
+wire, API, management or transport compatibility with NVIDIA SHARP or NVLink
+SHARP.

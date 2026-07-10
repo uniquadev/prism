@@ -1,68 +1,63 @@
 # 5.1 Protocollo
 
-I punti seguenti sono intenzionalmente fuori dall'ambito della prima versione
-del protocollo PRISM sviluppata per la tesi.
+Protocol 1.0 congela identità degli oggetti, transazioni di management,
+ammissione a due fasi, bitmap di fase e consegna affidabile hop-by-hop. Le
+revisioni future dovranno estendere questi contratti senza indebolire la
+sicurezza delle generazioni né interpretare la perdita Ethernet come successo.
 
-## Completamento affidabile e interruzione
+## Parziali esatti in un albero
 
-PRISM v0.1 non definisce `COL_ABORT`, acknowledgement positivi o negativi,
-ritrasmissione oppure pacchetti di recovery attivati da timeout. Pacchetti non
-validi, contributi duplicati, route mancanti, opcode non supportati e altre
-condizioni di errore vengono segnalati mediante contatori visibili in debug o
-tramite registri.
+L'estensione aritmetica principale è un formato lossless per lo stato parziale
+dell'accumulatore. Serializzare in FP32 un accumulatore locale esatto introduce
+un arrotondamento a ogni livello e non garantisce una riduzione globale esatta e
+indipendente dall'albero. Un futuro profilo `EXACT_PARTIAL_WIRE` dovrà definire
+ampiezza, normalizzazione, flag per valori speciali, overflow, merge, geometria
+del payload e negoziazione prima di pubblicare una tupla esatta multilivello.
 
-Un protocollo di produzione potrebbe aggiungere:
+## Memoria di completamento scalabile
 
-- acknowledgement o risposte di stato per il setup;
-- messaggi espliciti di interruzione della collettiva;
-- una politica di timeout e cleanup controllato dall'AM;
-- semantiche di retry o replay per fabric non lossless;
-- notifiche di completamento per contesto.
+La bitmap di fase completa rende la deduplicazione indipendente dalla finestra
+degli Aggregation Slot. Si possono studiare BRAM/URAM a banchi, memoria esterna,
+mappe sparse compresse, sommari gerarchici o allocazione a pagine. Ogni
+ottimizzazione deve conservare tombstone esatti per chunk, contatori di
+completamento efficienti e accounting atomico visibile in `OP_PREPARE`.
 
-## Reduce-scatter
+## Affidabilità consapevole della congestione
 
-La tabella di result route opera già su intervalli di chunk, quindi
-`REDUCE_SCATTER` può essere aggiunta senza sostituire il modello di diffusione
-dei risultati. L'AM installerebbe result route differenti per intervalli di
-chunk diversi, inviando ciascun intervallo soltanto al ramo che lo possiede.
+Il profilo obbligatorio `PM_OP_COL_PROGRESS` fornisce ACK, selective ACK,
+finestra e retry. Un profilo successivo potrà aggiungere suggerimenti di rate,
+integrazione ECN, timer adattivi ed equità tra operazioni concorrenti. La policy
+deve restare separata dal payload del risultato e trattenere ogni replica fino
+all'ACK di tutti i Result Path.
 
-La prima versione del protocollo della tesi mantiene `REDUCE_SCATTER` fuori
-dall'ambito per concentrarsi su `REDUCE` e `ALLREDUCE`.
+## Profili di autenticazione
 
-## Lunghezza dinamica del vettore
+La versione 1.0 negozia canali esterni autenticati o autenticazione in-protocol
+senza scegliere una primitiva non implementata nell'RTL. Lavori futuri potranno
+congelare tag, derivazione delle chiavi, sequenza anti-replay, rekey e
+autenticazione dei dati. L'analisi dovrà coprire contributor falsificati,
+generazioni stale, replay del management, takeover del lease e recovery da reset.
 
-Il protocollo di base ricava la lunghezza del vettore dal contesto della
-collettiva installato. Una revisione futura potrebbe trasportare la dimensione
-del vettore o il numero di elementi nel primo pacchetto dati di un'operazione,
-ma richiederebbe regole aggiuntive per i chunk fuori ordine, l'attivazione del
-contesto e il ciclo di vita dell'istanza dell'operazione.
+## Altre collettive e routing
 
-## Trasporto del control plane
+`ALLREDUCE` e `REDUCE_SCATTER` hanno codici assegnati, ma uno switch pubblica
+soltanto semantiche implementate. Profili futuri possono definire proprietà
+dello scatter, tensori segmentati, placement non contiguo, variazioni di
+topologia e altri operatori associativi. Restano necessari geometria invariabile,
+ACK esplicito per path e ammissione atomica.
 
-L'interfaccia logica dell'Aggregation Manager è indipendente dal trasporto. Le
-implementazioni future potranno mappare gli stessi record di setup su:
+## Recovery distribuito e osservabilità
 
-- AXI-Lite;
-- registri PCIe BAR;
-- chiamate firmware;
-- un'API software per il control plane;
-- una rete di management sicura.
+Un AM di produzione richiederà journal durevoli, takeover tra repliche del
+manager, rilevamento di gap negli eventi, telemetria della replay pressure e
+reinstallazione coordinata dopo una variazione del Device Boot ID. `OP_STATUS`
+resta la fonte autorevole; gli eventi sono un'ottimizzazione. Uno schema futuro
+potrà standardizzare contatori e trace senza esporre indirizzi privati delle
+tabelle hardware.
 
-## Sicurezza e controllo degli accessi
+## Relazione con sistemi precedenti
 
-Il setup in-band è utile per la simulazione e il bring-up della FPGA, ma non è
-un control plane sicuro per la produzione. Un deployment di produzione
-richiederebbe autenticazione, autorizzazione, filtraggio e protezione dai replay
-dei record di setup.
-
-## Profili della dimensione dei pacchetti
-
-Il protocollo attuale assume payload Ethernet standard non jumbo. I profili per
-jumbo frame e la negoziazione della MTU sono sviluppi futuri.
-
-## Scoperta della topologia
-
-Il primo prototipo assume che l'AM riceva le informazioni sulla topologia e sul
-posizionamento dei rank. Un futuro topology explorer potrebbe scoprire identità
-degli switch, porte locali, rank raggiungibili e relazioni padre/figlio prima di
-installare i contesti delle collettive.
+SHARP motiva la separazione concettuale tra job, gruppo collettivo riutilizzabile,
+singola richiesta e risorse limitate di aggregazione. PRISM usa questa lezione
+architetturale, ma non dichiara compatibilità di protocollo, wire, API,
+management o trasporto con NVIDIA SHARP o NVLink SHARP.

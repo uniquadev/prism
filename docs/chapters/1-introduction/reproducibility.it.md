@@ -18,8 +18,8 @@ domanda più circoscritta è:
 
 !!! question "Domanda sulla riproducibilità di PRISM"
 
-    Dati la stessa epoca logica di riduzione, gli stessi contributi dei rank, lo
-    stesso tipo di dato e la stessa politica per le eccezioni, può un datapath
+    Data la stessa identità di Collective Operation con lo stesso descrittore
+    aritmetico, gli stessi contributi dei rank e la stessa politica per le eccezioni, può un datapath
     RTL simile a quello di uno switch produrre lo stesso pattern di bit finale
     in virgola mobile indipendentemente dal timing dei pacchetti e dall'ordine
     di arbitraggio?
@@ -36,7 +36,7 @@ un'unica scelta aritmetica codificata rigidamente.
 | Strategia | Idea per il datapath | Garanzia di riproducibilità | Costo principale |
 |---|---|---|---|
 | **Accumulazione FP32 di base** | Accumula gli operandi nell'ordine di arrivo dei pacchetti. | Nessuna oltre la singola esecuzione. | Stato minimo e datapath più semplice. |
-| **Scheduling FP32 deterministico** | Attende i contributori previsti per il chunk e li somma secondo un ordine logico o un albero prefissato. | Riproducibilità bitwise per lo stesso insieme di contributi e lo stesso ordine logico. | Buffering, bitmap dei contributi e head-of-line blocking. |
+| **Scheduling FP32 deterministico** | Attende i contributori previsti per il chunk e li somma per Contributor ID locale crescente. | Riproducibilità bitwise per gli stessi contributi e lo stesso ordine. | Buffering, bitmap dei contributi e head-of-line blocking. |
 | **Percorso in stile Kulisch / superaccumulatore** | Mappa ogni input finito in una rappresentazione fixed-point esatta, combina i contributi con aritmetica intera e arrotonda una sola volta alla fine. | Somma finita esatta e indipendente dall'ordine prima dell'arrotondamento finale. | Stato dell'accumulatore ampio, banking, gestione dei riporti, normalizzazione finale e politica delle eccezioni. |
 
 
@@ -48,7 +48,7 @@ flowchart LR
     B --> O1[Veloce ma dipendente dall'ordine]
 
     S -->|FP32 deterministico| C[Attesa della bitmap dei contributi]
-    C --> D[Albero FP32 ordinato per rank]
+    C --> D[Fold FP32 per Contributor ID crescente]
     D --> O2[Bitwise stabile per un ordine logico fisso]
 
     S -->|Superaccumulatore| E[Decodifica segno, esponente e significando]
@@ -62,6 +62,14 @@ l'ordine**, mentre un **superaccumulatore elimina l'ordine come variabile
 numerica**. Il primo approccio è più economico e costituisce un riferimento
 utile. Il secondo è più costoso, ma corrisponde meglio alla semantica attesa da
 una riduzione collettiva indipendente dall'ordine.
+
+!!! warning "Esattezza locale e globale"
+
+    La garanzia vale per gli operandi combinati da un singolo accumulatore. In
+    un albero multi-livello, serializzare un parziale esatto in FP32 arrotonda a
+    quell'hop. L'esattezza globale indipendente dall'albero richiede una
+    rappresentazione lossless dello stato parziale. Protocol 1.0 riserva una
+    capability per i parziali esatti, ma non ne definisce ancora il formato.
 
 ## Perché sperimentare ora con i superaccumulatori?
 
@@ -163,7 +171,7 @@ finale è il bit di segno.
 | IEEE FP32 / binary32 | 24 | -126 | 127 | 277 | \(278+\lceil\log_2 R\rceil\) |
 
 Le righe FP8 estendono l'analisi di dimensionamento, ma non implicano il loro
-supporto sul wire nel protocollo v0.1.
+supporto sul wire in Protocol 1.0.
 
 Pertanto, un singolo accumulatore per riduzioni scalari che copra FP8, FP16,
 BF16 e FP32 è dominato dall'intervallo degli esponenti FP32/BF16:
@@ -183,7 +191,7 @@ FP32 richiede:
 \]
 
 bit per lane di riduzione, prima di aggiungere metadati implementativi come bit
-di validità, flag di eccezione, tag di epoca, bitmap dei contributi o stato di
+di validità, flag di eccezione, tag dell'operazione, bitmap dei contributi o stato di
 selezione delle banche.
 
 !!! warning "Riduzione scalare, non prodotto scalare"

@@ -1,68 +1,295 @@
 # Protocol
 
-PRISM operates at **Layer 2** of the OSI model and uses a custom
-Ethernet-based protocol to identify packets that must be processed by the
-PRISM datapath.
+PRISM operates at **Layer 2** and uses Ethernet frames to carry collective
+operations through an FPGA datapath. Layer 2 is the part of networking that
+moves frames according to MAC addresses, before protocols such as IP.
 
-The baseline protocol supports two MPI-style collective semantics:
+The initial prototype focuses on two MPI-style semantics:
 
-- `REDUCE`, where one selected root rank receives the final result.
-- `ALLREDUCE`, where all participating ranks receive the final result.
+- `REDUCE`: several ranks contribute, but one selected rank receives the sum;
+- `ALLREDUCE`: the same sum is returned to every participating rank.
 
-The protocol supports three data-plane modes:
+A **rank** is one participating process or accelerator endpoint. In a reduction
+tree, leaf switches receive rank contributions, optional internal switches
+combine partial sums, and one aggregation root produces the final result.
 
-1. **Transparent packet forwarding**, where non-local Ethernet frames may be
-   forwarded through the switch-like L2 pipeline.
-2. **Streaming collective aggregation**, where `PM_OP_COL_DATA` packets update
-   a reduction context and flow upward through an aggregation tree.
-3. **Result dissemination**, where `PM_OP_COL_RES` packets flow downward through
-   a result route tree installed by the Aggregation Manager.
+PRISM combines ordinary Layer-2 forwarding with three locally processed flows:
+in-band control, upward aggregation, and downward result delivery. A fourth
+packet class carries acknowledgments and retry feedback in the reverse
+direction. The packet-class section below introduces their names and roles.
 
-PRISM is currently a research-oriented FPGA datapath, not a production
-Ethernet switch. The protocol therefore prioritizes simplicity, inspectability,
-hardware feasibility, and cycle-level RTL clarity over full production-grade
-management, security, and interoperability.
+PRISM is a research FPGA datapath, not a complete production Ethernet switch.
+The protocol therefore prioritizes a clear packet model, reproducible tests,
+and implementable RTL over a broad management or security stack.
 
 !!! abstract "Protocol goal"
 
-    The PRISM protocol should make packets easy to classify early in the
-    pipeline. The first packet beat should contain enough information for the
-    parser to decide whether the packet must be forwarded, dropped, routed to
-    the setup path, consumed by the collective engine, or replicated on the
-    result-dissemination path.
+    The first packet beat should contain enough information for the parser to
+    select forwarding, control, aggregation, result, or progress handling before
+    the numeric payload reaches the collective engine.
+
+This page first explains the protocol through one complete reduction, from
+setup to release. The final sections then collect the exact Protocol 1.0
+layouts, registries, and validation rules needed by RTL and host software.
+
+---
+
+## Frame ownership and forwarding
+
+PRISM classification proceeds from the outer Ethernet frame inward:
+
+1. Parse destination MAC, source MAC, and EtherType.
+2. If EtherType is not `0x88B5`, apply the normal Layer-2 policy.
+3. If the frame is PRISM but its destination MAC is not a local PRISM
+   termination MAC, forward it unchanged when policy permits.
+4. Decode the PRISM opcode only for a locally addressed PRISM frame.
+
+```mermaid
+flowchart LR
+    RX["Ethernet frame"] --> ET{"PRISM EtherType?"}
+    ET -->|No| L2["Outer L2 policy"]
+    ET -->|Yes| OWN{"Destination MAC local?"}
+    OWN -->|No| L2
+    OWN -->|Yes| OP{"Opcode"}
+    OP -->|CONTROL| CTRL["Control path"]
+    OP -->|COL_DATA| DATA["Collective engine"]
+    OP -->|COL_RES| RES["Result path"]
+    OP -->|COL_PROGRESS| ACK["ACK / retry path"]
+    OP -->|Unknown| BAD["Invalid packet"]
+```
+
+The destination MAC and opcode answer different questions:
+
+- the MAC selects the next node or local owner;
+- the opcode selects what that owner does with the packet.
+
+`PM_TRANSPARENT` permits ordinary Layer-2 forwarding. `PM_STRICT` rejects
+non-local frames unless an explicit management-forwarding exception is enabled.
+The prototype normally uses transparent forwarding.
+
+---
+
+## Collective identifiers
+
+This section defines how packets refer unambiguously to the different entities
+of a collective. The protocol does not separate the physical network topology;
+it separates three logical levels with different lifetimes:
+
+1. the **group**, namely the contributor tree configured in the switches and
+   reusable across executions;
+2. the **operation**, namely one execution of the collective on that group (for
+   example, one specific invocation of `ALLREDUCE`);
+3. the **chunk**, namely the portion of the vector processed during that
+   operation.
+
+**Identifier fields in the packet** are the values actually transmitted on the
+link (*on the wire*). When multiple fields are listed, their tuple forms the
+identifying key: for example,
+`(Group ID, Group Generation)` identifies one precise group instance, not just
+the numeric Group ID. The **Purpose** column states what the key identifies and
+the lifetime over which that identity remains valid.
+
+| Object or field | Identifier fields in the packet | Purpose |
+|---|---|---|
+| Job / AM session | `Job ID:64` plus a switch-local Session Cookie | Ownership and recovery domain |
+| Collective Group | `Group ID:16`, `Group Generation:16` | Logical tree and contributor set, reusable across multiple operations |
+| Collective Operation | `Operation ID:16`, `Operation Generation:32` | One specific execution of the collective on that group |
+| Contributor ID | 16b | One rank or child subtree as seen by the receiving switch |
+| Result Path ID | 16b | One configured result replica on the current direct link |
+| Chunk Index | 24b | Position of one element interval in the vector |
+
+!!! note "Why associate a generation with an ID?"
+
+    Numeric IDs have finite width and are therefore reused. The **generation**
+    distinguishes the different instances that occupied the same ID: if a
+    packet from an old instance arrives late, its generation does not match the
+    current one and the switch can discard it. A Group ID is reusable only after
+    `GROUP_DESTROY` has been acknowledged everywhere; an Operation ID is
+    reusable only after `OP_RELEASE_RESPONSE`. Every reuse increments its
+    generation.
+
+Each switch stores only its local part of a logical group. At a leaf, Contributor
+IDs normally identify ranks. At an internal node, they identify child subtrees.
+Contributor IDs are dense and bound to an expected ingress port and source MAC.
+
+---
+
+## Chunking model
+
+A collective vector is split into **chunks**. A chunk is a consecutive interval
+of elements, not an arbitrary number of input bytes.
+
+For chunk `i`:
+
+\[
+\mathrm{first\_element}=i\,\mathrm{elements\_per\_chunk}
+\]
+
+\[
+\mathrm{elements\_in\_chunk}=
+\min(\mathrm{elements\_per\_chunk},
+\mathrm{element\_count}-\mathrm{first\_element})
+\]
+
+and
+
+\[
+\mathrm{expected\_chunks}=
+\left\lceil\frac{\mathrm{element\_count}}
+{\mathrm{elements\_per\_chunk}}\right\rceil,
+\qquad 0<\mathrm{expected\_chunks}\le 2^{24}.
+\]
+
+The same Chunk Index identifies the same element interval throughout the tree.
+The AM therefore configures the same element count and elements per chunk at
+every node.
+
+The standard Ethernet payload is 1500 bytes. The 2-byte PRISM control word and
+24-byte DATA/RES header leave:
+
+\[
+\boxed{\mathrm{PM\_CHUNK\_PAYLOAD\_BYTES}=1500-2-24=1474}.
+\]
+
+The payload length of a locally transmitted packet is
+
+\[
+\mathrm{elements\_in\_chunk}\times
+\mathrm{bytes\_per\_element}(\mathrm{packet\ wire\ format}).
+\]
+
+| Formats used by the tree | Maximum elements per chunk |
+|---|---:|
+| INT8 input, INT8 output | 1474 |
+| FP32 input, FP32 output | 368 |
+| INT8 input, FP32 output | 368 |
+
+For example, 1000 FP32 elements form chunks of 368, 368, and 264 elements.
+No FP16, BF16, or FP32 element is split across packets. The AM also enforces
+`child.output_format == parent.input_format` on every aggregation edge.
+Ethernet minimum-frame padding is not interpreted as vector data.
+
+Chunks may arrive in a different order inside the admitted receive window.
+Chunk Index, not arrival order, selects the correct temporary state.
+
+---
+
+## Data-plane packet classes
+
+After Ethernet ownership is established, the opcode selects one of these paths:
+
+| Value | Packet class | Purpose |
+|---:|---|---|
+| `0x00` | `PM_OP_INVALID` | Internal invalid classification; not a normal transmitted packet |
+| `0x01` | `PM_OP_CONTROL` | In-band setup, management responses, and events |
+| `0x02` | `PM_OP_COL_DATA` | Contributions and partial sums moving toward the aggregation root |
+| `0x03` | `PM_OP_COL_RES` | Completed results moving toward destination ranks |
+| `0x04` | `PM_OP_COL_PROGRESS` | ACK, retry, and receive-window feedback for one direct transfer |
+
+An **ACK** is an acknowledgment: it tells the previous sender that a packet was
+accepted safely. A **direct transfer**, also called one network hop, is one link
+between two neighboring nodes—for example `rank0 -> L0` or `L0 -> S0`.
+
+---
+
+## In-band setup
+
+The **Aggregation Manager** (AM) knows the participating ranks, the switch tree,
+and the requested arithmetic. **In-band** means that its commands travel as
+Ethernet packets through the same physical ports as collective data. After
+parsing, control packets use a separate control path and never enter the numeric
+accumulator.
+
+For example, the prototype can use OpenNIC as its FPGA shell: OpenNIC provides
+the host-facing ports and driver path, while PRISM implements the collective
+protocol in the programmable datapath. In-band setup therefore lets experiments
+start without first requiring a separate management processor.
+
+### Target-specific delivery
+
+The AM sends one `PM_OP_CONTROL` transaction per target switch. The Ethernet
+destination is that switch's local PRISM MAC and the payload contains only its
+local records. If the AM injects the frames through root `S0`, then `S0` consumes
+its own transaction and forwards frames addressed to `L0` and `L1` unchanged.
+The root does not derive or rewrite child configuration.
+
+```mermaid
+sequenceDiagram
+    participant AM
+    participant S0 as Root S0
+    participant L0 as Leaf L0
+    participant L1 as Leaf L1
+
+    AM->>S0: CONTROL addressed to S0
+    S0-->>S0: consume S0 records
+    AM->>S0: CONTROL addressed to L0
+    S0->>L0: forward unchanged
+    AM->>S0: CONTROL addressed to L1
+    S0->>L1: forward unchanged
+```
+
+### From discovery to active operation
+
+Protocol 1.0 separates reusable topology from one invocation:
+
+| Phase | Main commands | Effect |
+|---|---|---|
+| Discover | `CAPS_QUERY`, `RESOURCE_QUERY` | Read supported features and current availability |
+| Own | `SESSION_OPEN` | Establish Job ownership and a renewable switch-local cookie |
+| Install topology | `GROUP_STAGE`, then `GROUP_COMMIT` | Validate and atomically install contributors, parent action, and result next hops |
+| Start invocation | `OP_PREPARE`, then `OP_COMMIT` | Reserve operation state and atomically enable DATA acceptance |
+
+A resource snapshot is only advisory. Successful `GROUP_STAGE` or `OP_PREPARE`
+is what reserves resources. If one switch rejects prepare, the AM aborts and
+releases every switch that prepared. Endpoints transmit only after every commit
+has been acknowledged.
+
+Commands are idempotent: retrying the same transaction does not apply it twice.
+A conflicting reuse of one Transaction ID returns `TXN_CONFLICT`.
+
+!!! warning "Prototype security scope"
+
+    The thesis prototype assumes a trusted AM and uses the explicit laboratory
+    profile. Authentication and cryptographic key management are outside the
+    current implementation scope; the numeric registry at the end of this page
+    reserves profiles for a future protected deployment.
 
 ---
 
 ## Common frame format
 
-PRISM frames are carried inside Ethernet frames. The Ethernet header
-provides next-hop Layer-2 addressing, while the PRISM header identifies the
-protocol version, packet class, operation-specific metadata, and payload.
+PRISM is carried directly inside an Ethernet frame. The Ethernet header selects
+the next destination; the PRISM header identifies the packet class and the
+collective operation.
 
-The full first-beat diagram intentionally groups small fields to avoid
-unreadable packet diagrams.
+For a standard `PM_OP_COL_DATA` or `PM_OP_COL_RES` frame, the first 512-bit
+AXI4-Stream beat is:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 128, "bitWidth": 8, "rowHeight": 78, "showBits": true}} }%%
 packet
     +48: "Dst MAC"
     +48: "Src MAC"
-    +16: "Ethertype"
+    +16: "EtherType"
     +16: "PRISM Control"
-    +64: "Operation Header"
-    +320: "First payload bytes"
+    +192: "Operation Header"
+    +192: "First 24 payload bytes"
 ```
 
 | Field | Size | Meaning |
 |---|---:|---|
-| `Dst MAC` | 48b | Ethernet next-hop destination MAC |
-| `Src MAC` | 48b | Ethernet source MAC |
-| `Ethertype` | 16b | `0x88B5` for PRISM experimental frames |
-| `PRISM Control` | 16b | `Version Major`, `Version Minor`, and `Opcode` |
-| `Operation Header` | 64b | Opcode-specific fixed header |
-| `First payload bytes` | 320b | First payload fragment in the first 512-bit AXI-Stream beat |
+| `Dst MAC` | 48b | Ethernet destination for the next direct link |
+| `Src MAC` | 48b | MAC of the sender on that link |
+| `EtherType` | 16b | `0x88B5`, the PRISM experimental EtherType[^ethertype] |
+| `PRISM Control` | 16b | Version and packet-class opcode |
+| `Operation Header` | 192b | Job, group, operation, contributor/path, and chunk identity |
+| `First payload bytes` | 192b | First 24 bytes of the vector chunk |
 
-The PRISM control word is defined as:
+`TKEEP` identifies valid bytes in the final beat and `TLAST` marks the physical
+end of the frame. They validate the packet boundary; the operation configuration
+still determines the exact logical vector length.
+
+The common 16-bit control word is:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 16, "bitWidth": 28, "rowHeight": 78, "showBits": true}} }%%
@@ -72,894 +299,894 @@ packet
     +8: "Opcode"
 ```
 
-| Control field | Size | Meaning |
-|---|---:|---|
-| `Version Major` | 4b | Incompatible protocol-format revision |
-| `Version Minor` | 4b | Compatible extension or minor revision |
-| `Opcode` | 8b | PRISM packet class |
-
-The initial experimental protocol version is:
-
-\[
-\mathrm{VersionMajor}=0,\qquad \mathrm{VersionMinor}=1.
-\]
-
-Unsupported major versions are invalid. If the major version is supported but
-the minor version is newer than the local implementation, PRISM may process
-only the subset of fields defined by its supported minor version. Newer
-minor-version features are not guaranteed unless explicitly implemented.
-Reserved fields must be transmitted as zero.
-
----
-
-## Frame ownership and forwarding
-
-PRISM uses a custom EtherType to identify frames belonging to the PRISM
-protocol family. In the current experimental design, `0x88B5` is used as the
-PRISM EtherType. This value belongs to the local experimental EtherType
-range and is suitable for laboratory and research use, but it is not a
-production protocol assignment.[^ethertype]
-
-PRISM classification happens in three stages:
-
-1. The Ethernet parser reads `Dst MAC`, `Src MAC`, and `Ethertype`.
-2. If `Ethertype != 0x88B5`, the frame is treated as a non-PRISM Ethernet
-   frame and handled by the outer L2 forwarding policy.
-3. If `Ethertype == 0x88B5`, the switch first checks whether `Dst MAC` matches
-   one of its local PRISM termination MAC addresses. Only locally terminated
-   frames are decoded by the PRISM opcode parser. Other PRISM frames are
-   forwarded as ordinary L2 frames toward their next hop.
-
-This distinction is important: the `Dst MAC` selects the next hop or local owner
-of the frame; it does **not** decide whether the payload is a contribution or a
-result. That semantic decision is encoded by the PRISM opcode and by the
-collective context installed by the Aggregation Manager.
-
-PRISM may be configured with one of two outer forwarding policies:
-
-| Policy | Behavior |
-|---|---|
-| `PM_TRANSPARENT` | Non-local frames are forwarded through the normal L2 forwarding datapath. |
-| `PM_STRICT` | Non-local or non-PRISM frames are dropped or redirected to a debug/control path. |
-
-The default prototype policy is expected to be `PM_TRANSPARENT`, because
-PRISM is intended to behave as a switch-like datapath during hardware
-bring-up and should not unnecessarily discard ordinary Ethernet traffic.
-
-!!! note "Setup forwarding"
-
-    In-band setup packets use the same ownership rule. The Aggregation Manager
-    addresses each setup frame to the PRISM MAC of the switch that must
-    install the corresponding local state. Intermediate switches may forward the
-    frame; only the target switch consumes it.
-
----
-
-## Collective identifiers
-
-PRISM separates the identity of the installed context, the identity of a
-local contributor, and the position of a chunk inside the vector.
-
-| Field | Size | Meaning |
-|---|---:|---|
-| `Collective Context ID` | 16b | AM-assigned context identifier, consistent across one configured tree in v0.1 |
-| `Contributor ID` | 16b | Local contributor identifier inside that context |
-| `Chunk Index` | 24b | Zero-based chunk index inside the configured vector |
-| `Flags` | 8b | Opcode-specific flags; must be zero unless documented |
-
-`Collective Context ID` is not required to be a globally unique MPI
-communicator or application-level operation ID. However, v0.1 does not define
-per-hop context translation. The AM must therefore install the same 16-bit wire
-value on all switches that exchange `PM_OP_COL_DATA` or `PM_OP_COL_RES` for one
-aggregation/result tree. Disjoint trees may reuse the same value.
-
-`Contributor ID` replaces the older `Rank` field name. At a leaf switch it may
-refer to a local rank or host endpoint. At an internal switch it often refers to
-a child switch, child subtree, or other aggregation source. It does not need to
-equal the global MPI rank.
-
-`Chunk Index` is the placement key used by the collective engine to locate the
-per-chunk reduction state.
-
----
-
-## Chunking model
-
-PRISM collective vectors are split into **chunks**. A chunk is represented by
-one Ethernet/PRISM packet and may span multiple AXI-Stream beats.
-
-PRISM does not carry a payload-length field in the common data/result
-headers. The Aggregation Manager configures the collective context, including
-vector size, input format, accumulator mode, output format, number of expected
-local contributors, upstream action, and result routes.
-
-For the standard non-jumbo Ethernet case:
-
-\[
-\mathrm{EthernetPayloadMax}=1500\ \mathrm{bytes}
-\]
-
-\[
-\mathrm{PRISMHeaderBytes}
-=
-1_{\mathrm{version}}
-+
-1_{\mathrm{opcode}}
-+
-8_{\mathrm{operation\ header}}
-=
-10\ \mathrm{bytes}
-\]
-
-\[
-\mathrm{PM\_CHUNK\_PAYLOAD\_BYTES}
-=
-1500 - 10
-=
-1490\ \mathrm{bytes}
-\]
-
-Therefore, the default PRISM chunk payload size for standard Ethernet frames
-is:
-
-\[
-\boxed{\mathrm{PM\_CHUNK\_PAYLOAD\_BYTES}=1490}
-\]
-
-Jumbo-frame support is intentionally left outside the v0.1 protocol baseline and
-depends on the network and device configuration.[^ethernet-frame]
-
-!!! note "AXI-Stream first beat"
-
-    On the 512-bit AXI-Stream datapath, the first beat contains the Ethernet
-    header, PRISM control fields, the operation header, and the first
-    40 bytes of vector payload. Continuation beats carry payload bytes only.
-    `TLAST` marks the end of the current packet, and `TKEEP` identifies valid
-    bytes in the final beat.
-
-The switch computes the expected number of chunks from the context installed by
-the AM:
-
-\[
-\mathrm{vector\_bytes}
-=
-\mathrm{element\_count}
-\cdot
-\mathrm{bytes\_per\_element}(\mathrm{input\_format})
-\]
-
-\[
-\mathrm{expected\_chunks}
-=
-\left\lceil
-\frac{\mathrm{vector\_bytes}}
-{\mathrm{PM\_CHUNK\_PAYLOAD\_BYTES}}
-\right\rceil
-\]
-
-For each chunk:
-
-\[
-\mathrm{ChunkIndex}\in[0,\ \mathrm{expected\_chunks}-1].
-\]
-
-The last chunk may be shorter than `PM_CHUNK_PAYLOAD_BYTES`; its valid bytes are
-determined by the configured vector size and by the packet ending signaled
-through `TLAST/TKEEP`.
-
-Chunks may arrive out of order because the collective engine uses `Chunk Index`
-as the placement key. For collective data, the logical identity of a contribution
-is:
-
-\[
-(\mathrm{CollectiveContextID},\ \mathrm{ContributorID},\ \mathrm{ChunkIndex})
-\]
-
-Each chunk is completed independently. A chunk result may be emitted upward as a
-new contribution or downward as a result as soon as the switch has received all
-expected local contributors for that chunk; it does not need to wait for other
-chunks of the same vector.
-
----
-
-## Data-plane packet classes
-
-PRISM packets are classified by the parser after the Ethernet ownership
-check. If the Ethernet frame carries the PRISM EtherType and is addressed to
-the local PRISM MAC, the `Opcode` field determines how the operation header
-and payload are interpreted.
-
-| Value | Packet class | Purpose |
-|---:|---|---|
-| `0x00` | `PM_OP_INVALID` | Internal parser decision for unsupported, malformed, or intentionally discarded packets |
-| `0x01` | `PM_OP_COL_SETUP` | Aggregation Manager installs one or more collective-context records |
-| `0x02` | `PM_OP_COL_DATA` | Packet payload is consumed by the collective engine as a contribution |
-| `0x03` | `PM_OP_COL_RES` | Packet carries a completed result chunk through the result-dissemination tree |
-
-`PM_OP_INVALID` is not a normal transmitted packet format. It represents an
-internal classification outcome. The all-zero opcode is intentionally invalid so
-that reset/default state does not accidentally encode a valid PRISM
-operation.
-
-The opcode values are part of the PRISM v0.1 ABI and should be defined in
-the RTL package, testbench, and host-side packet generator.
-
----
-
-## In-band setup
-
-PRISM uses an **in-band setup model** for the initial FPGA prototype and
-calls the control entity that installs collective contexts the **Aggregation
-Manager** (**AM**). The AM is a single logical actor that knows the collective
-participants, the physical or logical topology, and the placement of ranks
-behind switches.
-
-The AM does not need to be implemented as a single physical host in every
-deployment. For the thesis prototype it can be trusted software, a testbench
-component, or a host-side control process that sends `PM_OP_COL_SETUP` packets
-to configure each switch-local collective context.
-
-```mermaid
-sequenceDiagram
-    participant AM as Aggregation Manager
-    participant SW as PRISM setup path
-    participant CTX as Context tables
-    participant CE as Collective engine
-    participant RRT as Result route table
-
-    AM->>SW: PM_OP_COL_SETUP
-    SW->>CTX: install context and upstream action
-    SW->>RRT: install result routes and replication groups
-    AM->>CE: PM_OP_COL_DATA packets arrive later
-    CE->>CTX: lookup context and contributor state
-    CE-->>CE: accumulate by Contributor ID and Chunk Index
-    CE->>RRT: route completed result chunks
-```
-
-This choice is intentional. For an FPGA prototype connected through an
-OpenNIC-like environment, in-band setup is a practical way to configure the
-switch without requiring a separate management CPU, PCIe BAR interface, AXI-Lite
-register map, or external control-plane stack.
-
-!!! warning "Security scope"
-
-    In-band setup is not production-secure by itself. A real deployment would
-    need filtering, authentication, authorization, or a trusted management
-    channel. PRISM currently treats in-band setup as a research and
-    prototyping mechanism, not as a secure production management protocol.
-
-The logical AM interface is independent from the physical transport used to
-deliver setup commands. Future implementations may map the same operations to a
-sideband interface such as AXI-Lite, PCIe BAR registers, firmware, or a software
-control-plane API.
-
----
-
-## Operation headers
-
-The common PRISM header contains a fixed 64-bit operation header. Its
-interpretation depends on the opcode.
-
-```mermaid
-flowchart LR
-    ETH["Ethernet parser"] --> TYPE{"Ethertype == 0x88B5?"}
-    TYPE -->|No| L2["Outer L2 policy"]
-    TYPE -->|Yes| OWN{"Dst MAC local?"}
-    OWN -->|No| L2
-    OWN -->|Yes| CTRL["Read PRISM control word"]
-    CTRL --> OP{"Opcode"}
-    OP -->|PM_OP_COL_SETUP| SETUP["Setup path"]
-    OP -->|PM_OP_COL_DATA| DATA["Collective engine"]
-    OP -->|PM_OP_COL_RES| RES["Result route path"]
-    OP -->|unknown| INV["PM_OP_INVALID"]
-```
-
-Reserved fields must be transmitted as zero and ignored by receivers in v0.1.
-
----
-
-### PM_OP_COL_SETUP
-
-`PM_OP_COL_SETUP` is sent by the Aggregation Manager to install, replace, or
-extend switch-local collective state.
-
-This packet is consumed by the setup path and must not be inserted into the
-normal forwarding VOQ datapath.
+Protocol 1.0 uses `Major=1` and `Minor=0`. A different major version is
+incompatible. The opcode tells the local parser how to interpret the following
+header.
+
+## Protocol 1.0 packet layouts
+
+The four opcodes are not four variants of the same operation. `CONTROL`
+configures and queries switches; `COL_DATA` carries contributions toward the
+root; `COL_RES` distributes results; and `COL_PROGRESS` returns acknowledgments
+and flow information to the adjacent sender. The common control word selects
+one of these headers. The diagrams show the encoding; the following tables
+explain the function of each field.
+
+Unless a field says otherwise:
+
+- fields appear in transmission order;
+- multibyte integers and numeric elements use network byte order: the most
+  significant byte is transmitted first;
+- reserved fields and unused flag bits are transmitted as zero and rejected
+  when received non-zero;
+- widths are in bits and offsets are in bytes from the start of the containing
+  header or Type-Length-Value (TLV) record.
+
+### `PM_OP_CONTROL`
+
+`PM_OP_CONTROL` has this fixed 24-byte header after the common control word:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
 packet
-    +16: "Setup ID"
-    +8: "Records"
+    +64: "Session Cookie"
+    +64: "Transaction / Event ID"
+    +16: "Control Command"
     +8: "Flags"
-    +32: "Reserved"
+    +8: "Status"
+    +16: "Fragment Index"
+    +16: "Fragment Count"
 ```
 
-| Field | Size | Purpose |
-|---|---:|---|
-| `Setup ID` | 16b | AM-selected identifier for tracing or idempotent retries |
-| `Records` | 8b | Number of setup records carried in the payload |
-| `Flags` | 8b | Setup flags; must be zero in v0.1 |
-| `Reserved` | 32b | Must be zero in v0.1 |
+`CONTROL` is the envelope of the in-band management protocol. The AM uses it to
+open sessions, install groups, prepare operations, and query state or resources;
+switches use it for responses and events. The header identifies the exchange
+and makes it reassemblable, while the TLV payload carries command-specific
+parameters.
 
-The setup payload is record-based. This allows a single setup packet to install
-several contexts or several pieces of state for the same context when the
-records fit in one Ethernet frame.
+| Field | What it does | Why it is needed |
+|---|---|---|
+| Session Cookie | Selects the AM session local to the switch | Prevents commands from different sessions from sharing ownership and resources; it is zero only before session opening or for explicitly permitted queries |
+| Transaction / Event ID | Identifies a request and its response, or one event | Enables correlation, deduplication, and reassembly while multiple exchanges are active |
+| Control Command | Selects the management action and determines the permitted TLVs | Lets one envelope carry setup, query, commit, release, and event messages |
+| Flags | Distinguish a request, response, or event and qualify the envelope | The meaning of the ID and Status field depends on the message role |
+| Status | Reports the request outcome or the condition associated with an event | Separates the general outcome from structured or diagnostic details in TLVs; it is zero in requests |
+| Fragment Index / Count | Positions this fragment and declares the total fragment count | A configuration command may exceed one Ethernet frame and must be reconstructed atomically before state changes |
 
-| Record type | Purpose |
+!!! example "Reading one CONTROL transaction"
+
+    A `GROUP_STAGE` sent in three frames keeps the same Session Cookie,
+    Transaction ID, command, flags, status, and Fragment Count. Only Fragment
+    Index changes (`0`, `1`, `2`). The switch reassembles all three payloads,
+    validates the TLVs, and only then attempts to install group state.
+
+<details class="protocol-registry" markdown="1">
+<summary>Control flags, TLVs, and fragmentation rules</summary>
+
+`SESSION_OPEN` and an unauthenticated static `CAPS_QUERY` use cookie zero.
+Requests use a Transaction ID; events use an Event ID. Control flags are:
+
+| Value | Flag |
 |---:|---|
-| `PM_SETUP_CONTEXT` | Defines the collective semantic, formats, fan-in, and vector length for one context |
-| `PM_SETUP_UPSTREAM` | Defines how a completed local reduction is emitted toward the aggregation parent |
-| `PM_SETUP_RESULT_ROUTE` | Maps `(Collective Context ID, Chunk Index range)` to a replication group |
-| `PM_SETUP_REPLICATION_GROUP` | Defines the next-hop MACs and egress ports used when forwarding result chunks |
+| `0x01` | `REQUEST` |
+| `0x02` | `RESPONSE` |
+| `0x04` | `EVENT` |
+| `0x08` | `ACK_REQUIRED` |
+| `0x10` | `AUTH_PRESENT` |
 
-Each setup record is aligned to 64-bit words and starts with the same 64-bit
-record header:
+The control payload is a sequence of 64-bit-aligned Type-Length-Value records:
 
 ```mermaid
-%%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
+%%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 16, "rowHeight": 78, "showBits": true}} }%%
 packet
-    +8: "Type"
-    +8: "Len"
-    +16: "Context ID"
-    +32: "Reserved"
+    +16: "Type"
+    +16: "Flags"
+    +32: "Value Length"
 ```
 
-| Field | Size | Purpose |
-|---|---:|---|
-| `Type` | 8b | One of the `PM_SETUP_*` record types |
-| `Len` | 8b | Record length in 64-bit words, including this header |
-| `Context ID` | 16b | Switch-local context affected by this record |
-| `Reserved` | 32b | Must be zero in v0.1 |
+Value Length counts only value bytes. Zero alignment padding extends each whole
+record to a multiple of 8 bytes. The only assigned TLV flag is
+`MANDATORY=0x0001`. An unknown mandatory TLV rejects the transaction; an
+unknown optional TLV is skipped. A non-repeatable TLV must not appear twice.
 
-Unknown record types, zero lengths, or records that extend beyond the setup
-payload are invalid for v0.1.
+Fragment Count is positive and Fragment Index is smaller than it. Every
+fragment of one `(Session Cookie, Transaction ID)` has the same command, flags,
+status, and count. Reassembly completes before TLV parsing or state mutation.
+Conflicting, inconsistent, timed-out, or over-capacity reassembly is discarded.
 
-#### Context record
+`PROTOCOL_VERSION_RANGE` is 8 bytes: minimum major, minimum minor, maximum
+major, and maximum minor (8 bits each), followed by 32 zero bits. Scalar
+identity, lease, profile, feature, and state TLVs contain one unsigned 64-bit
+value. `PAYLOAD_DIGEST` is 32-byte SHA-256, `ERROR_DETAIL` is UTF-8, and
+`AUTH_DATA` contains profile-defined opaque bytes.
 
-A context record defines the reduction behavior and per-chunk fan-in:
+</details>
 
-After the common record header, `PM_SETUP_CONTEXT` carries:
+`DATA`, `RES`, and `PROGRESS` belong to one already-configured operation. The
+first two carry numeric elements; `PROGRESS` carries no vector data and instead
+controls reliability on one direct link. Job, Group, and Operation fields occur
+in all three so that a valid packet cannot be applied to the wrong context.
 
-```mermaid
-%%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
-packet
-    +8: "Collective"
-    +8: "Reduce Op"
-    +8: "Input Fmt"
-    +8: "Acc Mode"
-    +8: "Output Fmt"
-    +8: "Node Role"
-    +16: "Reserved"
-    +16: "Expected"
-    +32: "Element Count"
-    +16: "Reserved"
-```
+| Shared identity | Function |
+|---|---|
+| Job ID | Selects the AM ownership domain |
+| Group ID + Group Generation | Selects the precise instance of the logical tree |
+| Operation ID + Operation Generation | Selects the precise active execution on that tree |
 
-| Field | Size | Purpose |
-|---|---:|---|
-| `collective_semantic` | 8b | `PM_COL_REDUCE` or `PM_COL_ALLREDUCE` |
-| `reduction_operator` | 8b | v0.1 supports `PM_RED_SUM` |
-| `input_format` | 8b | Wire format of incoming `PM_OP_COL_DATA` elements |
-| `accumulator_mode` | 8b | Internal accumulation strategy |
-| `output_format` | 8b | Wire format of emitted result elements |
-| `node_role` | 8b | `ROOT`, `INTERNAL`, `LEAF`, or `SINGLE` for validation/debug |
-| `expected_local_contributors` | 16b | Number of unique local contributors expected for each chunk |
-| `element_count` | 32b | Number of logical vector elements |
-| `Reserved` | 32b total | Must be zero in v0.1 |
+### `PM_OP_COL_DATA`
 
-`expected_local_contributors` is local to this switch and this context. It is
-not the number of global ranks in the whole job. In a spine-leaf topology, a
-leaf waits for its local ranks, while a spine waits for its child leaves.
-
-#### Upstream action record
-
-An upstream action record defines what happens after the switch completes a
-local reduction chunk.
-
-After the common record header, `PM_SETUP_UPSTREAM` carries:
+The 24-byte DATA header is followed by numeric vector elements:
 
 ```mermaid
-%%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
+%%{init: {"packet": {"bitsPerRow": 96, "bitWidth": 8, "rowHeight": 78, "showBits": true}} }%%
 packet
-    +16: "Parent Contributor"
-    +8: "Parent Port"
-    +8: "Flags"
-    +32: "Reserved"
-    +48: "Parent Dst MAC"
-    +16: "Reserved"
-```
-
-| Field | Size | Purpose |
-|---|---:|---|
-| `parent_contributor_id` | 16b | Contributor ID used by this switch when sending to its parent |
-| `parent_egress_port` | 8b | Local port used to reach the aggregation parent |
-| `flags.has_parent` | 1b | If set, completed chunks are emitted upward as `PM_OP_COL_DATA` |
-| `parent_dst_mac` | 48b | PRISM MAC of the parent aggregation node |
-| `Reserved` | 48b total | Must be zero in v0.1 |
-
-If `has_parent == 1`, a completed chunk is emitted as `PM_OP_COL_DATA`. If
-`has_parent == 0`, the switch is the aggregation root for this context and the
-completed chunk enters the result route path as `PM_OP_COL_RES`.
-
-#### Result route records
-
-A result route record defines where completed result chunks go:
-
-After the common record header, `PM_SETUP_RESULT_ROUTE` carries one 64-bit word:
-
-```mermaid
-%%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
-packet
-    +24: "Chunk First"
-    +24: "Chunk Last"
+    +64: "Job ID"
     +16: "Group ID"
-```
-
-| Field | Size | Purpose |
-|---|---:|---|
-| `chunk_first` | 24b | First chunk index matched by this route |
-| `chunk_last` | 24b | Last chunk index matched by this route |
-| `replication_group_id` | 16b | Local replication group to execute |
-
-The result route lookup key is:
-
-\[
-(\mathrm{CollectiveContextID},\ \mathrm{ChunkIndex})
-\]
-
-This makes `REDUCE` and `ALLREDUCE` direct, and it also leaves a clean path for
-future `REDUCE_SCATTER`, where different chunk ranges are routed to different
-destination branches.
-
-#### Replication group records
-
-A replication group record defines one or more local next hops:
-
-After the common record header, `PM_SETUP_REPLICATION_GROUP` begins with a
-64-bit group header:
-
-```mermaid
-%%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
-packet
-    +16: "Group ID"
-    +8: "Entries"
-    +40: "Reserved"
-```
-
-It is followed by `Entries` 64-bit next-hop records:
-
-```mermaid
-%%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
-packet
-    +8: "Egress Port"
-    +8: "Hop Type"
-    +48: "Dst MAC"
-```
-
-| Field | Size | Purpose |
-|---|---:|---|
-| `replication_group_id` | 16b | Local group selected by a result route |
-| `entries` | 8b | Number of next-hop records in the group |
-| `egress_port` | 8b | Local output port for one replica |
-| `next_hop_type` | 8b | `SWITCH` or `RANK`, used for validation/debug |
-| `dst_mac` | 48b | Next-hop PRISM or rank MAC |
-| `Reserved` | 40b | Must be zero in v0.1 |
-
-The forwarding behavior depends on `egress_port` and `dst_mac`; `next_hop_type`
-is not required for packet delivery, but it is useful for checking that the AM
-installed the intended result tree.
-
-A setup packet or setup record is invalid if:
-
-- `Records == 0`;
-- a record length is inconsistent with its type;
-- `expected_local_contributors == 0`;
-- `element_count == 0`;
-- `chunk_first > chunk_last`;
-- a replication-group length does not match its entry count;
-- `collective_semantic` is unsupported;
-- `reduction_operator` is unsupported;
-- `input_format`, `accumulator_mode`, or `output_format` is unsupported;
-- an upstream action is missing for a non-root node;
-- a root node has no result route for a chunk that may complete;
-- a result route points to an unknown replication group;
-- reserved fields are non-zero.
-
-PRISM trusts setup writes to succeed in the current prototype. It does not
-define setup acknowledgments, setup responses, or status packets.
-
----
-
-### PM_OP_COL_DATA
-
-`PM_OP_COL_DATA` carries one contributor's data for one vector chunk. The packet
-is consumed by the collective engine and is not forwarded directly through the
-normal VOQ datapath.
-
-```mermaid
-%%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
-packet
+    +16: "Group Generation"
+    +16: "Operation ID"
+    +32: "Operation Generation"
     +16: "Contributor ID"
-    +16: "Context ID"
     +24: "Chunk Index"
     +8: "Flags"
 ```
 
-| Field | Size | Purpose |
-|---|---:|---|
-| `Contributor ID` | 16b | Local contributor identifier for this switch/context |
-| `Context ID` | 16b | AM-assigned context identifier for the configured tree |
-| `Chunk Index` | 24b | Zero-based chunk index within the configured vector |
-| `Flags` | 8b | Must be zero in v0.1 |
+The Contributor ID names a direct local source. At a leaf it normally names a
+rank; at an internal node it names a child subtree. When a switch sends its
+partial upward, it preserves the Job, Group, Operation, and Chunk Index,
+replaces Contributor ID with the installed `parent_contributor_id`, uses its
+local PRISM egress MAC as source, and uses the Parent MAC from the upstream
+action as destination.
 
-For each chunk, the collective engine waits until it has received
-`expected_local_contributors` unique contributor IDs. Once the chunk is complete,
-the context decides the next action:
+| Specific field | Function |
+|---|---|
+| Contributor ID | Selects the expected contributor on the current link and allows duplicate or wrong-source contributions to be detected |
+| Chunk Index | Places the payload in the correct vector interval and selects temporary reduction state independently of arrival order |
+| Flags | Mark retransmission, ACK request, and the last chunk |
+| Payload | Contains the elements that this node must accumulate for the named chunk |
 
-- If an upstream parent is configured, the switch emits a new `PM_OP_COL_DATA`
-  packet toward that parent. The emitted packet uses `parent_contributor_id`,
-  because the parent sees the whole child subtree as one local contributor.
-- If no upstream parent is configured, the switch is the aggregation root and
-  emits `PM_OP_COL_RES` according to the result route table.
+### `PM_OP_COL_RES`
 
-This rule removes ambiguity: `PM_OP_COL_DATA` always belongs to the upward
-aggregation phase.
-
----
-
-### PM_OP_COL_RES
-
-`PM_OP_COL_RES` carries one completed result chunk through the
-result-dissemination tree. It is generated by the aggregation root and may be
-forwarded by intermediate switches until it reaches the destination rank or
-ranks.
+The 24-byte result header is followed by result elements:
 
 ```mermaid
-%%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
+%%{init: {"packet": {"bitsPerRow": 96, "bitWidth": 8, "rowHeight": 78, "showBits": true}} }%%
 packet
-    +16: "Reserved"
-    +16: "Context ID"
+    +64: "Job ID"
+    +16: "Group ID"
+    +16: "Group Generation"
+    +16: "Operation ID"
+    +32: "Operation Generation"
+    +16: "Result Path ID"
     +24: "Chunk Index"
     +8: "Flags"
 ```
 
-| Field | Size | Purpose |
-|---|---:|---|
-| `Reserved` | 16b | Must be zero in v0.1 |
-| `Context ID` | 16b | AM-assigned context identifier for the configured tree |
-| `Chunk Index` | 24b | Result chunk index |
-| `Flags` | 8b | Must be zero in v0.1 |
+The Result Path ID identifies one configured result replica on the current
+direct path. It is replaced with the locally configured ID when another switch
+replicates the result. Each replica preserves the Job, Group, Operation, and
+Chunk Index, uses the local PRISM egress MAC as source, and takes its destination
+MAC from the selected replication-group entry.
 
-When a switch receives a local `PM_OP_COL_RES`, it performs a result route lookup
-using `(Context ID, Chunk Index)`. The matching route selects one replication
-group. The switch then emits one replica per group entry, setting each replica's
-Ethernet `Dst MAC` to the configured next hop.
+| Specific field | Function |
+|---|---|
+| Result Path ID | Selects the expected result replica or destination on the current link; it is hop-local and may change when a switch replicates the result |
+| Chunk Index | Places the result in the same vector interval identified during aggregation |
+| Flags | Mark retransmission, ACK request, and the last chunk |
+| Payload | Contains final elements for the chunk, not another contribution to reduce |
 
-`PM_OP_COL_RES` is never accumulated again. It always belongs to the downward
-result-dissemination phase.
+!!! info "Shared DATA/RES flags and payload validation"
 
-The result payload format is determined by the context configured by
-`PM_OP_COL_SETUP`. The output format may differ from both the input format and
-the internal accumulator mode.
+    A **peer** is the neighboring sender or receiver on one direct link. DATA
+    and RES use the same flag assignments:
 
-Example:
+    | Value | Flag | Meaning |
+    |---:|---|---|
+    | `0x01` | `RETRANSMIT` | This packet is a retransmission |
+    | `0x02` | `ACK_REQUIRED` | The direct peer must acknowledge safe acceptance |
+    | `0x04` | `LAST_CHUNK` | This is the last Chunk Index of the operation |
 
-```text
-input_format     = PM_FMT_FP32
-accumulator_mode = PM_ACC_EXACT_FP32_MAG277
-output_format    = PM_FMT_FP32
+    The exact payload length is derived from the chunking model above and the
+    packet wire format. Ethernet padding is not vector data.
+
+### `PM_OP_COL_PROGRESS`
+
+`PM_OP_COL_PROGRESS` has this fixed 40-byte header, followed by an optional
+selective-ACK bitmap:
+
+```mermaid
+%%{init: {"packet": {"bitsPerRow": 80, "bitWidth": 9, "rowHeight": 78, "showBits": true}} }%%
+packet
+    +64: "Job ID"
+    +16: "Group ID"
+    +16: "Group Generation"
+    +16: "Operation ID"
+    +32: "Operation Generation"
+    +16: "Peer ID"
+    +8: "Peer Kind"
+    +8: "Flags"
+    +24: "Window Base"
+    +16: "Admitted Window"
+    +24: "Selective ACK Base"
+    +16: "Bitmap Bits"
+    +8: "Status"
+    +8: "Reason"
+    +32: "Retry Delay us"
+    +16: "Reserved"
 ```
 
-This means that input elements are received as `PM_FMT_FP32`, accumulated
-internally using an exact FP32 scalar-sum accumulator family, and emitted as
-`PM_FMT_FP32`.
+`PROGRESS` travels in the opposite direction from the `DATA` or `RES` packet it
+controls. It does not mean that the whole collective has completed: it reports
+what the adjacent receiver accepted and how much more traffic it can receive.
+Each hop can therefore retransmit missing chunks locally without restarting the
+end-to-end operation.
 
----
+| Field | What it does | Why it is needed |
+|---|---|---|
+| Job, Group, Operation | Select the operation to which the feedback belongs | An ACK for an earlier generation must be ignored |
+| Peer ID | Identifies the contributor, result path, or endpoint to which the feedback applies | A switch may manage multiple direct streams for the same operation |
+| Peer Kind | Defines the namespace in which Peer ID is interpreted | The same numeric value can name different entity types; for a result ACK, Peer ID is a Result Path ID |
+| Flags | Mark duplicate reception, bitmap presence, window update, result path, or fatal error | Allow unused parts to be omitted and qualify the meaning of other fields |
+| Window Base | Gives the first Chunk Index in the advertised receive window | Distinguishes chunks that remain admissible from chunks that are old or too far ahead |
+| Admitted Window | Gives the number of consecutive chunks, starting at Window Base, that the receiver is prepared to admit | Provides flow control and prevents overrunning available bitmap, aggregation-slot, or replay-buffer resources |
+| Selective ACK Base | Maps the first bitmap bit to a Chunk Index | Lets the bitmap describe an arbitrary portion of the operation without one bit per global chunk |
+| Bitmap Bits | Declares how many bitmap bits are meaningful | Supports variable-length selective ACKs and exact payload validation |
+| Status / Reason | Report the general outcome and the specific cause of the feedback | Distinguish, for example, a harmless duplicate from an exhausted window, malformed payload, or unrecoverable error |
+| Retry Delay us | Suggests how long to wait before retransmission | Avoids immediate retries when rejection is due to temporary resource pressure; zero means not applicable |
+| Reserved | Space for compatible extensions, transmitted as zero | Keeps the header aligned without assigning future semantics today |
 
-## Collective semantics
+!!! example "Reading a selective ACK"
 
-The collective semantic describes the communication-level behavior.
+    With `Selective ACK Base = 40`, `Bitmap Bits = 4`, and bitmap `1011`, the
+    receiver acknowledges chunks 40, 42, and 43; chunk 41 remains unacknowledged
+    and may be retransmitted. If it also advertises `Window Base = 40` and
+    `Admitted Window = 8`, it is prepared to admit chunks 40 through 47.
 
-| Value | Semantic | Meaning |
+<details class="protocol-registry" markdown="1">
+<summary>Selective-ACK encoding and PROGRESS flags</summary>
+
+The bitmap payload is exactly `ceil(Bitmap Bits/8)` bytes. Bit `j`,
+most-significant bit first within each byte, acknowledges
+`Selective ACK Base + j` for the named peer. Unused low bits in the final byte
+are zero. A single-chunk ACK uses one bit; a pure window update may use zero.
+
+Progress flags are:
+
+| Value | Flag | Meaning |
 |---:|---|---|
-| `0x00` | `PM_COL_INVALID` | Invalid or unsupported collective semantic |
-| `0x01` | `PM_COL_REDUCE` | Contributors produce a result delivered to one root rank |
-| `0x02` | `PM_COL_ALLREDUCE` | Contributors produce a result delivered to all participating ranks |
+| `0x01` | `DUPLICATE` | The receiver had already accepted the item |
+| `0x02` | `SELECTIVE_ACK` | A selective-ACK bitmap is present |
+| `0x04` | `WINDOW_UPDATE` | Window Base or Admitted Window is authoritative |
+| `0x08` | `RESULT_PATH` | The peer identifies a result path |
+| `0x10` | `FATAL` | The operation cannot recover by retry |
 
-`REDUCE` and `ALLREDUCE` are in scope for the first PRISM thesis protocol.
-Other collective semantics, such as `REDUCE_SCATTER`, are future work.
-
-`REDUCE_SCATTER` is intentionally not encoded as a special case in the result
-path. The result route table is already chunk-range based, so a future
-implementation can route different chunk ranges to different destination
-branches without replacing the dissemination model.
-
----
-
-## Reduction operator
-
-The reduction operator describes the mathematical operation applied to elements.
-
-| Value | Operator | Meaning |
-|---:|---|---|
-| `0x00` | `PM_RED_INVALID` | Invalid or unsupported reduction operator |
-| `0x01` | `PM_RED_SUM` | Addition |
-
-Only `PM_RED_SUM` is in scope for the first PRISM thesis prototype.
-
----
-
-## Wire formats and accumulator modes
-
-PRISM distinguishes **wire formats** from **accumulator modes**.
-
-A wire format describes how elements are encoded in `PM_OP_COL_DATA` and
-`PM_OP_COL_RES` payloads.
-
-| Value | Wire format | Meaning |
-|---:|---|---|
-| `0x00` | `PM_FMT_INVALID` | Invalid or unsupported wire format |
-| `0x01` | `PM_FMT_INT8` | 8-bit integer payload elements |
-| `0x02` | `PM_FMT_FP16` | IEEE binary16 payload elements |
-| `0x03` | `PM_FMT_BF16` | bfloat16 payload elements |
-| `0x04` | `PM_FMT_FP32` | IEEE binary32 payload elements |
-
-An accumulator mode describes how the collective engine internally combines
-contributions.
-
-| Value | Accumulator mode | Meaning |
-|---:|---|---|
-| `0x00` | `PM_ACC_INVALID` | Invalid or unsupported accumulator mode |
-| `0x01` | `PM_ACC_NATIVE` | Accumulate using the native arithmetic associated with the input format |
-| `0x02` | `PM_ACC_FP32` | Accumulate using FP32 arithmetic |
-| `0x03` | `PM_ACC_DETERMINISTIC_FP32` | Wait for contributions and reduce in deterministic logical order |
-| `0x04` | `PM_ACC_EXACT_FP16_MAG40` | Exact scalar-sum accumulator family for FP16 inputs |
-| `0x05` | `PM_ACC_EXACT_BF16_MAG261` | Exact scalar-sum accumulator family for BF16 inputs |
-| `0x06` | `PM_ACC_EXACT_FP32_MAG277` | Exact scalar-sum accumulator family for FP32 inputs |
-
-!!! note "Why `MAG40`, `MAG261`, and `MAG277`?"
-
-    These names refer to the exact scalar-sum magnitude range before rank-count
-    carry headroom and sign are added. They are not dot-product accumulator
-    sizes. The final signed storage width still depends on the maximum number of
-    contributing ranks.
-
-For exact finite scalar summation with \(R\) contributing ranks:
-
-\[
-W_{\mathrm{signed}}
-=
-W_{\mathrm{mag}}
-+
-\lceil \log_2 R \rceil
-+
-1
-\]
-
-This follows the scalar-reduction sizing model, not the wider dot-product
-Kulisch bound.[^superaccumulator-sizing]
-
-For the detailed derivation, see
-[1.2 Reproducibility](../1-introduction/reproducibility.md#accumulator-sizing-for-scalar-reductions).
-
-!!! note "Input, accumulator, and output roles"
-
-    `input_format`, `accumulator_mode`, and `output_format` are intentionally
-    separate. PRISM may receive data in one representation, accumulate it
-    using a reproducible internal strategy, and emit results in a format selected
-    by the Aggregation Manager.
+</details>
 
 ---
 
 ## Example: `REDUCE(SUM, root = rank1)`
 
-This example follows one chunk through the complete nominal protocol lifecycle.
-The same data-plane steps execute independently for every configured chunk, and
-different chunk indices may be in different phases at the same time.
+The topology has one spine (`S0`), two leaves (`L0`, `L1`), and four ranks.
+`rank1` is the only result destination. The same seven steps execute independently
+for every chunk.
 
-The topology contains one spine, two leaves, and four participating ranks:
-
-- `L0` connects `rank0` and `rank1`;
-- `L1` connects `rank2` and `rank3`;
-- `S0` is the aggregation root;
-- `rank1` is the only result destination.
-
-For chunk `i`, PRISM computes the element-wise reduction
+For chunk `i`:
 
 \[
-\mathbf{result}[i] =
-\mathbf{x}_0[i] + \mathbf{x}_1[i] + \mathbf{x}_2[i] + \mathbf{x}_3[i].
+\mathbf{result}[i]=
+\mathbf{x}_0[i]+\mathbf{x}_1[i]+\mathbf{x}_2[i]+\mathbf{x}_3[i].
 \]
 
-Blue denotes control-plane setup, orange denotes upward aggregation, green
-denotes downward result delivery, and attenuated nodes are not active in the
-illustrated step.
+### 1. Install the group and prepare the operation
 
-### 1. Install the collective context
+The AM sends a target-specific group descriptor to `S0`, `L0`, and `L1`.
+After every group is committed, it prepares and commits one Operation handle and
+its chunk geometry across the same tree.
 
-The AM knows the topology, participant placement, and root rank. It sends an
-individually addressed `PM_OP_COL_SETUP` frame to each switch. The Ethernet
-destination MAC identifies the switch that consumes a setup frame; intermediate
-switches only forward frames addressed to another PRISM node.
-
-For v0.1, the AM installs the same wire `Context ID`, shown as `C`, throughout
-this tree because no per-hop context translation is defined. The relevant local
-state is:
-
-| Node | Expected local contributors | Upstream action after local completion | Result route for chunk `i` |
+| Node | Local contributors | After local completion | Result next hop |
 |---|---|---|---|
-| `L0` | `rank0`, `rank1` | Emit one `PM_OP_COL_DATA` to `S0` as the configured parent contributor | Replication group `{rank1}` |
-| `L1` | `rank2`, `rank3` | Emit one `PM_OP_COL_DATA` to `S0` as the configured parent contributor | No result route |
-| `S0` | `L0`, `L1` | No parent; inject the completed chunk as `PM_OP_COL_RES` | Replication group `{L0}` |
-
-Each replication-group entry contains a local egress port and the destination
-MAC of its next hop. Therefore a switch needs only its local decision; it does
-not discover the global topology at runtime.
+| `L0` | `rank0`, `rank1` | send one DATA partial to `S0` | `rank1` |
+| `L1` | `rank2`, `rank3` | send one DATA partial to `S0` | none |
+| `S0` | subtrees `L0`, `L1` | become the aggregation root | `L0` |
 
 <figure markdown="span">
-  ![The Aggregation Manager installs context C and selective result routes at S0, L0, and L1.](../../assets/images/protocol/reduce-lifecycle/01-context-setup.png){ loading=lazy }
-  <figcaption>Setup installs both the upward aggregation actions and the selective result path to <code>rank1</code>.</figcaption>
+  ![The AM sends three target-specific frames through S0. S0 consumes its frame and forwards the other two unchanged to L0 and L1.](../../assets/images/protocol/reduce-lifecycle/01-target-specific-setup.png){ loading=lazy }
+  <figcaption>Each switch receives a distinct Group and Operation description for its own local state.</figcaption>
 </figure>
+
+The group remains reusable; vector length, arithmetic, completion, and retry
+state belong to this one operation.
 
 ### 2. Submit rank contributions
 
-For chunk `i`, every rank sends one `PM_OP_COL_DATA` packet to its local leaf.
-The operation header carries the leaf-local `Contributor ID`, `Context ID = C`,
-and `Chunk Index = i`; the Ethernet destination MAC selects the receiving leaf.
-
-The leaf uses `(Context ID, Contributor ID, Chunk Index)` to reject duplicates
-and update the correct accumulator. `Chunk Index` is also the placement key, so
-packets for different chunks may arrive out of order without changing result
-routing.
+Every rank sends one DATA packet for chunk `i` to its leaf. The header carries
+the complete Job/Group/Operation generations, leaf-local Contributor ID, and
+Chunk Index. Each leaf acknowledges safe acceptance.
 
 <figure markdown="span">
-  ![Four COL_DATA packets carry chunk i from rank0 through rank3 to their local leaves.](../../assets/images/protocol/reduce-lifecycle/02-rank-contributions.png){ loading=lazy }
-  <figcaption>Each contribution travels only to its directly configured leaf.</figcaption>
+  ![Four DATA packets carry chunk i from rank0 through rank3 to their local leaves.](../../assets/images/protocol/reduce-lifecycle/02-rank-contributions.png){ loading=lazy }
+  <figcaption>Each contribution travels only to its configured leaf; ACK/retry protects each direct link.</figcaption>
 </figure>
 
 ### 3. Complete the leaf reductions
 
-`L0` completes its local chunk after receiving the unique contributions from
-`rank0` and `rank1`; independently, `L1` waits for `rank2` and `rank3`:
+The leaves complete independently:
 
 \[
 \begin{aligned}
-\mathbf{partial}_0[i] &= \mathbf{x}_0[i] + \mathbf{x}_1[i], \\
-\mathbf{partial}_1[i] &= \mathbf{x}_2[i] + \mathbf{x}_3[i].
+\mathbf{partial}_0[i] &= \mathbf{x}_0[i]+\mathbf{x}_1[i],\\
+\mathbf{partial}_1[i] &= \mathbf{x}_2[i]+\mathbf{x}_3[i].
 \end{aligned}
 \]
 
-The two leaves do not need to complete at the same time. Each can emit its
-partial result as soon as its own `expected_local_contributors` condition is
-satisfied.
-
 <figure markdown="span">
-  ![L0 and L1 independently complete partial sums for chunk i.](../../assets/images/protocol/reduce-lifecycle/03-local-reduction.png){ loading=lazy }
-  <figcaption>Contributor counting is local to each switch and context.</figcaption>
+  ![L0 and L1 independently complete one local partial sum for chunk i.](../../assets/images/protocol/reduce-lifecycle/03-local-reduction.png){ loading=lazy }
+  <figcaption>Contributor counting is local; the two leaves do not need to complete together.</figcaption>
 </figure>
+
+Each leaf retains the completed partial until the parent acknowledges it.
 
 ### 4. Aggregate at the root switch
 
-The upstream action at each leaf creates a new `PM_OP_COL_DATA` packet addressed
-to `S0`. Its `Contributor ID` is the configured `parent_contributor_id`, so `S0`
-sees each whole leaf subtree as one contributor rather than seeing the original
-ranks.
+`L0` and `L1` emit their partials as DATA. At `S0`, each whole child subtree is
+one local contributor identified by the child's configured
+`parent_contributor_id`.
 
-After receiving the partials from both `L0` and `L1`, `S0` computes
+After both partials are accepted, `S0` computes the final chunk:
 
 \[
-\mathbf{result}[i] = \mathbf{partial}_0[i] + \mathbf{partial}_1[i].
+\mathbf{result}[i]=\mathbf{partial}_0[i]+\mathbf{partial}_1[i].
 \]
 
-The opcode selected after completion comes from the installed upstream action,
-not from the destination MAC: a node with `has_parent == 1` emits
-`PM_OP_COL_DATA`; the aggregation root has `has_parent == 0` and injects
-`PM_OP_COL_RES` into the result route path.
-
 <figure markdown="span">
-  ![L0 and L1 send one COL_DATA partial each to S0, which completes the final sum.](../../assets/images/protocol/reduce-lifecycle/04-root-reduction.png){ loading=lazy }
-  <figcaption>In-network aggregation reduces four rank packets to two leaf partials before the spine.</figcaption>
+  ![L0 and L1 send one DATA partial each to S0, which computes the final chunk.](../../assets/images/protocol/reduce-lifecycle/04-root-reduction.png){ loading=lazy }
+  <figcaption>Four rank packets become two partial packets before reaching the aggregation root.</figcaption>
 </figure>
 
 ### 5. Route the result to `rank1`
 
-`S0` looks up `(C, i)` in its result route table. The matching replication group
-contains only `L0`, so `S0` emits one `PM_OP_COL_RES` replica on the `L0` egress
-port and sets its Ethernet destination MAC to the configured MAC of `L0`.
-
-`L0` consumes the locally addressed frame and performs the same lookup. Its
-replication group contains only `rank1`, so it emits one replica with the
-destination MAC of `rank1`. `L1`, `rank0`, `rank2`, and `rank3` receive no result
-traffic.
-
-The two mechanisms have distinct responsibilities:
-
-- the result route and replication group select the local next hop or next hops;
-- the Ethernet destination MAC identifies the selected next hop on the wire.
-
-This per-hop rule works at any tree depth: every intermediate switch repeats the
-local lookup and MAC rewrite. No switch needs to infer whether a port reaches a
-leaf or a rank, and no result flooding is required.
+The route at `S0` selects a replication entry toward `L0`; the route at `L0`
+selects `rank1`. `L1` and the other ranks receive no result traffic.
 
 <figure markdown="span">
-  ![COL_RES follows only the selective S0 to L0 to rank1 path.](../../assets/images/protocol/reduce-lifecycle/05-selective-result-routing.png){ loading=lazy }
-  <figcaption>The result route selects one branch at each hop; all non-destination branches remain idle.</figcaption>
+  ![The left panel shows PM_OP_COL_RES moving down the spine-leaf tree from S0 to L0 and rank1. The right panel shows PM_OP_COL_PROGRESS acknowledgments returning from rank1 to L0 and from L0 to S0.](../../assets/images/protocol/reduce-lifecycle/05-selective-result-routing.png){ loading=lazy }
+  <figcaption>Result packets move toward <code>rank1</code>; each ACK returns only to the immediately previous sender.</figcaption>
 </figure>
 
-### 6. Deliver the result and release chunk state
+Ethernet does not tell a sender that the next node accepted a packet. Therefore
+`S0` keeps a replay copy until `L0` acknowledges Path A, and `L0` keeps its own
+copy until `rank1` acknowledges Path B. A missing packet or ACK triggers a retry;
+an already accepted result is not forwarded or delivered twice, but is
+acknowledged again. The duplicate key is the Operation handle, local Result Path
+ID, and Chunk Index.
 
-`rank1` consumes the result payload. The per-chunk accumulator state is no
-longer needed after a switch has successfully handed off its completed output:
+### 6. Complete the operation
 
-- `L0` and `L1` release their chunk state after emitting their upward
-  `PM_OP_COL_DATA` packets;
-- `S0` releases its chunk state after injecting `PM_OP_COL_RES` into the result
-  path;
-- the configured context, upstream actions, result routes, and replication
-  groups remain installed for the other chunks in the collective.
-
-In particular, `L1` does not wait for a result packet because it is not on the
-`REDUCE` result tree. Result forwarding depends only on persistent route state,
-not on keeping a completed accumulator alive.
+After all required result-path acknowledgments, heavy chunk buffers may be
+reused, but the operation retains its handle and completion tombstones so that
+late duplicates are still rejected.
 
 <figure markdown="span">
-  ![Rank1 has received result i, all switch chunk states are released, and setup state remains installed.](../../assets/images/protocol/reduce-lifecycle/06-delivery-and-state-release.png){ loading=lazy }
-  <figcaption>Temporary accumulator state and persistent routing state have different lifetimes.</figcaption>
+  ![S0, L0, and L1 each free their local chunk buffers after all required acknowledgments, while Operation and Group state remain installed.](../../assets/images/protocol/reduce-lifecycle/06-delivery-and-state-release.png){ loading=lazy }
+  <figcaption><code>COMPLETE</code> reclaims heavy per-chunk storage locally at every switch; it does not free the Operation handle.</figcaption>
 </figure>
 
-!!! note "Packet loss in v0.1"
+### 7. Release the Operation state
 
-    This is the nominal successful lifecycle. PRISM v0.1 does not provide
-    acknowledgment, retransmission, timeout, or abort packets. A lost
-    `PM_OP_COL_DATA` leaves the destination chunk incomplete; a lost
-    `PM_OP_COL_RES` leaves the root rank without that result. Implementations may
-    expose context occupancy and drop/error counters for experiments, while
-    reliable completion and recovery remain future work.
+The AM waits until every switch is complete, sends one target-specific
+`OP_RELEASE` request to each switch, and waits for every response.
+
+<figure markdown="span">
+  ![The AM sends separate OP_RELEASE requests addressed to S0, L0, and L1. Each switch frees its local Operation state, while the reusable Group setup remains installed.](../../assets/images/protocol/reduce-lifecycle/07-operation-release.png){ loading=lazy }
+  <figcaption>Release happens independently at <code>S0</code>, <code>L0</code>, and <code>L1</code>; the spine only forwards non-local requests.</figcaption>
+</figure>
+
+The same Operation ID may then be reused only with a higher generation.
 
 ### How `ALLREDUCE` differs
 
-The setup and upward aggregation phases are identical. Only the result route
-tree changes: `S0` selects a replication group containing both `L0` and `L1`;
-each leaf then selects all of its participating local ranks. Each branch receives
-one result replica per tree level, without broadcasting onto unrelated ports.
+Setup and upward aggregation are unchanged. Only the result tree differs: `S0`
+replicates toward both leaves and each leaf replicates toward all participating
+local ranks. Each result link still uses its own Result Path ID and ACK.
+
+### Lifecycle and invalid behavior
+
+The main operation lifecycle is:
+
+```text
+FREE -> PREPARED -> ACTIVE -> COMPLETE -> RELEASING -> FREE
+```
+
+`PREPARED` or `ACTIVE` may instead enter `ABORTED`, but stale-generation and
+completion tombstones remain until release.
+
+An operation becomes `COMPLETE` only after every required chunk and result
+replica has been acknowledged and no retry remains outstanding. Completion
+events are useful notifications, while `OP_STATUS` remains authoritative.
+
+A packet or transaction is invalid when, for example, it has an unsupported
+version/opcode, malformed TLV, stale session or generation, wrong contributor
+binding, out-of-range chunk, wrong payload length, overlapping result routes,
+unknown Result Path, or non-zero reserved bits. Management failures return a
+precise status; DATA/RES failures use PROGRESS feedback where possible. Invalid
+input never counts as a successful reservation or contribution.
 
 ---
 
-## Lifecycle and invalid behavior
+## Collective semantics
 
-The configured context and route tables are persistent control-plane state. The
-per-chunk accumulator state is temporary data-plane state.
+| Value | Semantic | Meaning |
+|---:|---|---|
+| `0x00` | `INVALID` | Unsupported collective |
+| `0x01` | `REDUCE` | Deliver the reduced vector to one selected rank |
+| `0x02` | `ALLREDUCE` | Deliver the reduced vector to every participating rank |
+| `0x03` | `REDUCE_SCATTER` | Reserved semantic; support must be advertised |
 
-A switch can release the local accumulator state for a chunk after it has
-successfully emitted the completed chunk upward as `PM_OP_COL_DATA` or injected
-it into the result route path as `PM_OP_COL_RES`. A leaf that participates in
-`ALLREDUCE` does not need to keep its accumulator state while waiting for the
-result to return; result forwarding uses the persistent route tables.
+The first RTL prototype focuses on `REDUCE` and `ALLREDUCE`.
 
-A packet is invalid if it uses unsupported major versions, unknown opcodes,
-unsupported setup values, non-zero reserved fields where zero is required,
-context identifiers that are not installed, duplicate contributions for the same
-`(Collective Context ID, Contributor ID, Chunk Index)`, or payloads inconsistent
-with the configured collective context.
+---
 
-PRISM v0.1 does not generate error packets. Invalid packets are dropped or
-ignored, and the implementation may increment simulation-visible, debug-visible,
-or register-visible error counters. Reliable completion protocols,
-retransmission, explicit abort messages, and production fault handling are
-outside the first thesis protocol.
+## Reduction operator
+
+| Value | Operator | Meaning |
+|---:|---|---|
+| `0x00` | `INVALID` | Unsupported operator |
+| `0x01` | `SUM` | Element-wise addition |
+
+`SUM` is the reduction operator in scope for the thesis prototype.
+
+---
+
+## Wire formats and accumulator modes
+
+A **wire format** describes how elements are encoded in DATA or RES. An
+**accumulator mode** describes how a switch combines them internally. The
+output format is independent, so INT8 input may be accumulated or emitted in a
+wider representation.
+
+| Value | Wire format | Bytes per element |
+|---:|---|---:|
+| `0x01` | `INT8` | 1 |
+| `0x02` | `FP16` | 2 |
+| `0x03` | `BF16` | 2 |
+| `0x04` | `FP32` | 4 |
+
+The accumulator-mode assignments are:
+
+| Value | Accumulator mode |
+|---:|---|
+| `0x01` | `NATIVE` |
+| `0x02` | `FP32` |
+| `0x03` | `DETERMINISTIC_FP32` |
+| `0x04` | `EXACT_FP16_MAG40` |
+| `0x05` | `EXACT_BF16_MAG261` |
+| `0x06` | `EXACT_FP32_MAG277` |
+
+Assignment of a code does not claim RTL support: the complete
+`(input, accumulator, output)` tuple
+must be advertised and accepted by `OP_PREPARE`.
+
+`DETERMINISTIC_FP32` combines contributors in ascending local Contributor ID.
+Exact accumulation is local to one node. Serializing a local exact partial as
+FP32 rounds at that link, so global tree-independent exactness requires a
+lossless partial representation that Protocol 1.0 does not yet define. See
+[Floating-Point Reproducibility](../1-introduction/reproducibility.md) for the
+numerical derivation.
+
+---
 
 
-[^ethertype]: RFC 9542 documents `0x88B5` and `0x88B6` as local experimental
-    EtherTypes. These values are suitable for local experimentation but should
-    not be treated as production protocol assignments.
+## Normative registries and setup records
 
-[^ethernet-frame]: Standard Ethernet payload is 1500 bytes for non-jumbo frames.
-    The Ethernet header is 14 bytes and the FCS is 4 bytes; preamble, SFD, and
-    interpacket gap are physical-layer overhead and are normally not part of the
-    AXI-Stream payload seen by PRISM.
+The packet path above is sufficient to understand the protocol. The following
+collapsed blocks are the exact implementation reference for parser, RTL, and
+host-software work.
 
-[^superaccumulator-sizing]: The sizing rule follows the PRISM
-    scalar-reduction model. It is intentionally different from the wider
-    dot-product Kulisch bound because PRISM collective reductions sum
-    already-formed numeric values rather than products.
+<details class="protocol-registry" markdown="1">
+<summary>Control commands and TLV registry</summary>
+
+<p class="protocol-registry__heading">Control commands</p>
+
+The Protocol 1.0 command registry uses three columns to remain readable. The
+schema cell lists required, optional, and repeatable TLVs; `—` means that the
+command carries none.
+
+| Value | Command | Accepted TLVs |
+|---:|---|---|
+| `0x0000` | `INVALID` | reserved |
+| `0x0001` | `CAPS_QUERY` | **Optional:** `SECURITY_PROFILE` |
+| `0x0002` | `CAPS_RESPONSE` | **Required:** `DEVICE_BOOT_ID`, `PROTOCOL_VERSION_RANGE`, `CAPABILITIES`<br>**Optional:** `FEATURE_MASK`, `SECURITY_PROFILE` |
+| `0x0003` | `RESOURCE_QUERY` | **Optional:** `GROUP_HANDLE`, `OPERATION_HANDLE` |
+| `0x0004` | `RESOURCE_RESPONSE` | **Required:** `RESOURCE_SNAPSHOT_ID`, `RESOURCE_SNAPSHOT`<br>**Optional:** `SESSION_USAGE` |
+| `0x0010` | `SESSION_OPEN` | **Required:** `JOB_ID`, `SECURITY_PROFILE`<br>**Optional:** `AUTH_DATA`, `LEASE_MS` |
+| `0x0011` | `SESSION_OPEN_RESPONSE` | **Required:** `SESSION_COOKIE`, `DEVICE_BOOT_ID`, `LEASE_MS`, `LEASE_GRACE_MS` |
+| `0x0012` | `SESSION_RENEW` | **Optional:** `LEASE_MS`, `AUTH_DATA` |
+| `0x0013` | `SESSION_RENEW_RESPONSE` | **Required:** `LEASE_MS` |
+| `0x0014` | `SESSION_CLOSE` | — |
+| `0x0015` | `SESSION_CLOSE_RESPONSE` | **Optional:** `RELEASED_RESOURCES` |
+| `0x0100` | `GROUP_STAGE` | **Required:** `GROUP_HANDLE`, `GROUP_DESCRIPTOR`, `UPSTREAM_ACTION`<br>**Optional:** `CONTRIBUTOR_BINDING`, `REPLICATION_GROUP`<br>**Repeatable:** `CONTRIBUTOR_BINDING`, `REPLICATION_GROUP` |
+| `0x0101` | `GROUP_STAGE_RESPONSE` | **Required:** `GROUP_HANDLE`, `RESOURCE_RESERVATION` |
+| `0x0102` | `GROUP_COMMIT` | **Required:** `GROUP_HANDLE` |
+| `0x0103` | `GROUP_COMMIT_RESPONSE` | **Required:** `GROUP_HANDLE`, `GROUP_STATUS` |
+| `0x0104` | `GROUP_ABORT` | **Required:** `GROUP_HANDLE` |
+| `0x0105` | `GROUP_ABORT_RESPONSE` | **Optional:** `RELEASED_RESOURCES` |
+| `0x0106` | `GROUP_STATUS` | **Required:** `GROUP_HANDLE` |
+| `0x0107` | `GROUP_STATUS_RESPONSE` | **Required:** `GROUP_HANDLE`, `GROUP_STATUS` |
+| `0x0108` | `GROUP_DESTROY` | **Required:** `GROUP_HANDLE` |
+| `0x0109` | `GROUP_DESTROY_RESPONSE` | **Required:** `GROUP_HANDLE`<br>**Optional:** `RELEASED_RESOURCES` |
+| `0x0200` | `OP_PREPARE` | **Required:** `GROUP_HANDLE`, `OPERATION_HANDLE`, `OPERATION_DESCRIPTOR`<br>**Optional:** `RESULT_ROUTE`, `RETRY_POLICY`<br>**Repeatable:** `RESULT_ROUTE` |
+| `0x0201` | `OP_PREPARE_RESPONSE` | **Required:** `OPERATION_HANDLE`, `GRANTED_RESOURCES` |
+| `0x0202` | `OP_COMMIT` | **Required:** `OPERATION_HANDLE` |
+| `0x0203` | `OP_COMMIT_RESPONSE` | **Required:** `OPERATION_HANDLE`, `OPERATION_STATUS` |
+| `0x0204` | `OP_ABORT` | **Required:** `OPERATION_HANDLE` |
+| `0x0205` | `OP_ABORT_RESPONSE` | **Required:** `OPERATION_HANDLE`, `OPERATION_STATUS` |
+| `0x0206` | `OP_STATUS` | **Required:** `OPERATION_HANDLE` |
+| `0x0207` | `OP_STATUS_RESPONSE` | **Required:** `OPERATION_HANDLE`, `OPERATION_STATUS`<br>**Optional:** `PHASE_BITMAP_SUMMARY`, `ERROR_DETAIL` |
+| `0x0208` | `OP_RELEASE` | **Required:** `OPERATION_HANDLE` |
+| `0x0209` | `OP_RELEASE_RESPONSE` | **Required:** `OPERATION_HANDLE`<br>**Optional:** `RELEASED_RESOURCES` |
+| `0x0300` | `OP_COMPLETE_EVENT` | **Required:** `OPERATION_HANDLE`, `EVENT_DETAIL` |
+| `0x0301` | `OP_ERROR_EVENT` | **Required:** `OPERATION_HANDLE`, `EVENT_DETAIL`, `ERROR_DETAIL` |
+| `0x0302` | `RESOURCE_PRESSURE_EVENT` | **Required:** `EVENT_DETAIL` |
+| `0x0303` | `EVENT_ACK` | **Required:** `EVENT_DETAIL` |
+
+<p class="protocol-registry__heading">TLV type assignments</p>
+
+| Value | TLV type | Family |
+|---:|---|---|
+| `0x0000` | `INVALID` | General |
+| `0x0001` | `JOB_ID` | General |
+| `0x0002` | `DEVICE_BOOT_ID` | General |
+| `0x0003` | `SESSION_COOKIE` | General |
+| `0x0004` | `LEASE_MS` | General |
+| `0x0005` | `LEASE_GRACE_MS` | General |
+| `0x0006` | `SECURITY_PROFILE` | General |
+| `0x0007` | `FEATURE_MASK` | General |
+| `0x0008` | `PROTOCOL_VERSION_RANGE` | General |
+| `0x0009` | `CAPABILITIES` | General |
+| `0x000A` | `RESOURCE_SNAPSHOT_ID` | General |
+| `0x000B` | `RESOURCE_SNAPSHOT` | General |
+| `0x000C` | `RESOURCE_RESERVATION` | General |
+| `0x000D` | `PAYLOAD_DIGEST` | General |
+| `0x000E` | `ERROR_DETAIL` | General |
+| `0x000F` | `RELEASED_RESOURCES` | General |
+| `0x0010` | `AUTH_DATA` | General |
+| `0x0011` | `SESSION_USAGE` | General |
+| `0x0100` | `GROUP_HANDLE` | Group |
+| `0x0101` | `GROUP_DESCRIPTOR` | Group |
+| `0x0102` | `CONTRIBUTOR_BINDING` | Group |
+| `0x0103` | `UPSTREAM_ACTION` | Group |
+| `0x0104` | `REPLICATION_GROUP` | Group |
+| `0x0105` | `GROUP_STATUS` | Group |
+| `0x0200` | `OPERATION_HANDLE` | Operation |
+| `0x0201` | `OPERATION_DESCRIPTOR` | Operation |
+| `0x0202` | `RESULT_ROUTE` | Operation |
+| `0x0203` | `GRANTED_RESOURCES` | Operation |
+| `0x0204` | `OPERATION_STATUS` | Operation |
+| `0x0205` | `PHASE_BITMAP_SUMMARY` | Operation |
+| `0x0206` | `RETRY_POLICY` | Operation |
+| `0x0300` | `EVENT_DETAIL` | Event |
+
+`CONTRIBUTOR_BINDING`, `REPLICATION_GROUP`, and `RESULT_ROUTE` are
+repeatable only in commands whose schema permits repetition.
+
+</details>
+
+<details class="protocol-registry" markdown="1">
+<summary>Group and operation record layouts</summary>
+
+<p class="protocol-registry__heading">Group records</p>
+
+The 4-byte `GROUP_HANDLE` value is:
+
+| Offset | Width | Field |
+|---:|---:|---|
+| 0 | 16 | Group ID |
+| 2 | 16 | Group Generation |
+
+The 8-byte `GROUP_DESCRIPTOR` value is:
+
+| Offset | Width | Field |
+|---:|---:|---|
+| 0 | 8 | Node Role |
+| 1 | 8 | Flags, zero in Protocol 1.0 |
+| 2 | 16 | Expected Local Contributors |
+| 4 | 16 | Maximum Replication Groups |
+| 6 | 16 | Maximum Entries per Replication Group |
+
+Each 12-byte `CONTRIBUTOR_BINDING` value is:
+
+| Offset | Width | Field |
+|---:|---:|---|
+| 0 | 16 | Contributor ID |
+| 2 | 16 | Ingress Port |
+| 4 | 48 | Source MAC |
+| 10 | 16 | Reserved, zero |
+
+Contributor IDs are exactly the dense range
+`0 <= id < expected_local_contributors`. Contributor IDs and
+`(Ingress Port, Source MAC)` bindings are unique.
+
+The 16-byte `UPSTREAM_ACTION` value is:
+
+| Offset | Width | Field |
+|---:|---:|---|
+| 0 | 8 | Has Parent, `0` or `1` |
+| 1 | 8 | Reserved, zero |
+| 2 | 16 | Parent Contributor ID |
+| 4 | 16 | Egress Port |
+| 6 | 48 | Parent MAC |
+| 12 | 32 | Reserved, zero |
+
+A `REPLICATION_GROUP` begins with an 8-byte header:
+
+| Offset | Width | Field |
+|---:|---:|---|
+| 0 | 16 | Replication Group ID |
+| 2 | 16 | Entry Count |
+| 4 | 32 | Reserved, zero |
+
+It is followed by exactly Entry Count 12-byte entries:
+
+| Entry offset | Width | Field |
+|---:|---:|---|
+| 0 | 16 | Result Path ID |
+| 2 | 16 | Egress Port |
+| 4 | 8 | Next-Hop Type |
+| 5 | 8 | Reserved, zero |
+| 6 | 48 | Destination MAC |
+
+Entry Count is positive. Result Path IDs and `(Egress Port, Destination MAC)`
+pairs are unique within the replication group.
+
+<p class="protocol-registry__heading">Operation records</p>
+
+The 6-byte `OPERATION_HANDLE` value is:
+
+| Offset | Width | Field |
+|---:|---:|---|
+| 0 | 16 | Operation ID |
+| 2 | 32 | Operation Generation |
+
+The 40-byte `OPERATION_DESCRIPTOR` value is:
+
+| Offset | Width | Field |
+|---:|---:|---|
+| 0 | 8 | Collective Semantic |
+| 1 | 8 | Reduction Operator |
+| 2 | 8 | Input Wire Format |
+| 3 | 8 | Accumulator Mode |
+| 4 | 8 | Output Wire Format |
+| 5 | 8 | Flags; bit 0 is Result Delivery Role |
+| 6 | 16 | Reserved, zero |
+| 8 | 32 | Element Count |
+| 12 | 16 | Elements per Chunk |
+| 14 | 16 | Requested Window, in chunks |
+| 16 | 32 | Maximum Reduction Terms |
+| 20 | 32 | Timeout, ms |
+| 24 | 16 | Requested Replay Slots |
+| 26 | 16 | Result Route Count |
+| 28 | 8 | Result Delivery Role, `0` or `1` |
+| 29 | 8 | Reserved, zero |
+| 30 | 16 | Reserved, zero |
+| 32 | 32 | Expected Chunks |
+| 36 | 16 | Retry Limit |
+| 38 | 16 | Reserved, zero |
+
+Descriptor flag bit 0 and the Result Delivery Role byte encode the same value
+and must agree; all other descriptor flag bits are zero. Expected Chunks equals
+the value derived from element geometry and fits the 24-bit Chunk Index.
+
+Each 8-byte `RESULT_ROUTE` value is:
+
+| Offset | Width | Field |
+|---:|---:|---|
+| 0 | 24 | First Chunk Index, inclusive |
+| 3 | 24 | Last Chunk Index, inclusive |
+| 6 | 16 | Replication Group ID |
+
+Route ranges lie within the operation and do not overlap. On a result-delivery
+node they cover every Chunk Index. There is no priority, first-match, or
+longest-match rule; disjoint ranges may select the same replication group.
+
+</details>
+
+<details class="protocol-registry" markdown="1">
+<summary>Capability, resource, and allocation vectors</summary>
+
+`CAPABILITIES`, `RESOURCE_SNAPSHOT`, `SESSION_USAGE`,
+`RESOURCE_RESERVATION`, `GRANTED_RESOURCES`, and `RELEASED_RESOURCES` use
+16-byte entries:
+
+| Offset | Width | Field |
+|---:|---:|---|
+| 0 | 16 | Key |
+| 2 | 16 | Flags, zero |
+| 4 | 64 | Value |
+| 12 | 32 | Reserved, zero |
+
+A resource snapshot reports availability but reserves nothing. Only
+`GROUP_STAGE` and `OP_PREPARE` reserve resources.
+
+<p class="protocol-registry__heading">Capability keys</p>
+
+| Value | Capability key |
+|---:|---|
+| `0x0000` | `INVALID` |
+| `0x0001` | `MAX_SESSIONS` |
+| `0x0002` | `MAX_INSTALLED_GROUPS` |
+| `0x0003` | `MAX_PREPARED_OPERATIONS` |
+| `0x0004` | `MAX_ACTIVE_OPERATIONS_GLOBAL` |
+| `0x0005` | `MAX_ACTIVE_OPERATIONS_PER_GROUP` |
+| `0x0006` | `MAX_CHUNKS_PER_OPERATION` |
+| `0x0007` | `MAX_BITMAP_BYTES_PER_OPERATION` |
+| `0x0008` | `TOTAL_PHASE_BITMAP_POOL_BYTES` |
+| `0x0009` | `MAX_ACTIVE_AGGREGATION_SLOTS_GLOBAL` |
+| `0x000A` | `MAX_ACTIVE_AGGREGATION_SLOTS_PER_OPERATION` |
+| `0x000B` | `TOTAL_REPLAY_OUTPUT_SLOTS` |
+| `0x000C` | `MAX_LOCAL_CONTRIBUTORS` |
+| `0x000D` | `MAX_GROUP_REPLICATION_GROUPS` |
+| `0x000E` | `MAX_ENTRIES_PER_REPLICATION_GROUP` |
+| `0x000F` | `MAX_OPERATION_RESULT_ROUTES` |
+| `0x0010` | `MAX_MANAGEMENT_STAGING_BYTES` |
+| `0x0011` | `MAX_SELECTIVE_ACK_WINDOW` |
+| `0x0012` | `SUPPORTED_COLLECTIVE_SEMANTICS` |
+| `0x0013` | `SUPPORTED_REDUCTION_OPERATORS` |
+| `0x0014` | `SUPPORTED_ARITHMETIC_TUPLE` |
+| `0x0015` | `MTU_BYTES` |
+| `0x0016` | `MAX_PRISM_PAYLOAD_BYTES` |
+| `0x0017` | `SUPPORTED_SECURITY_PROFILES` |
+| `0x0018` | `SUPPORTED_RELIABILITY_FEATURES` |
+| `0x0019` | `REPLAY_CACHE_DEPTH` |
+| `0x001A` | `REPLAY_CACHE_RETENTION_MS` |
+
+Supported-semantic, operator, and security-profile values are bitmasks with bit
+`n` corresponding to numeric registry value `n`. Arithmetic tuple entries
+encode input format in bits 63:56, accumulator mode in 55:48, output format in
+47:40, and zero in 39:0. `SUPPORTED_ARITHMETIC_TUPLE` may therefore appear
+more than once; other capability keys appear once.
+
+<p class="protocol-registry__heading">Dynamic resource keys</p>
+
+| Value | Resource key |
+|---:|---|
+| `0x0000` | `INVALID` |
+| `0x0001` | `FREE_GROUP_SLOTS` |
+| `0x0002` | `FREE_PREPARED_OPERATION_SLOTS` |
+| `0x0003` | `FREE_ACTIVE_OPERATION_SLOTS` |
+| `0x0004` | `FREE_PHASE_BITMAP_BYTES` |
+| `0x0005` | `FREE_AGGREGATION_SLOTS` |
+| `0x0006` | `FREE_REPLAY_OUTPUT_SLOTS` |
+| `0x0007` | `FREE_ROUTE_ENTRIES` |
+| `0x0008` | `FREE_REPLICATION_GROUPS` |
+| `0x0009` | `FREE_REPLICATION_ENTRIES` |
+| `0x000A` | `SESSION_GROUP_USAGE` |
+| `0x000B` | `SESSION_PREPARED_OPERATION_USAGE` |
+| `0x000C` | `SESSION_ACTIVE_OPERATION_USAGE` |
+| `0x000D` | `SESSION_BITMAP_USAGE_BYTES` |
+| `0x000E` | `SESSION_AGGREGATION_SLOT_USAGE` |
+
+<p class="protocol-registry__heading">Reservation, grant, and release keys</p>
+
+| Value | Allocation key |
+|---:|---|
+| `0x0000` | `INVALID` |
+| `0x0001` | `GROUP_SLOTS` |
+| `0x0002` | `OPERATION_SLOTS` |
+| `0x0003` | `PHASE_BITMAP_BYTES` |
+| `0x0004` | `AGGREGATION_SLOTS` |
+| `0x0005` | `REPLAY_OUTPUT_SLOTS` |
+| `0x0006` | `ROUTE_ENTRIES` |
+| `0x0007` | `REPLICATION_GROUPS` |
+| `0x0008` | `REPLICATION_ENTRIES` |
+
+</details>
+
+<details class="protocol-registry" markdown="1">
+<summary>Status and remaining numeric registries</summary>
+
+<p class="protocol-registry__heading">Status assignments</p>
+
+| Value | Status |
+|---:|---|
+| `0x00` | `OK` |
+| `0x01` | `UNSUPPORTED_VERSION` |
+| `0x02` | `UNSUPPORTED_COMMAND` |
+| `0x03` | `UNSUPPORTED_FEATURE` |
+| `0x04` | `INVALID_REQUEST` |
+| `0x05` | `INVALID_RECORD` |
+| `0x06` | `INVALID_STATE` |
+| `0x07` | `AUTH_REQUIRED` |
+| `0x08` | `AUTH_FAILED` |
+| `0x09` | `STALE_SESSION` |
+| `0x0A` | `STALE_DEVICE_BOOT_ID` |
+| `0x0B` | `TXN_CONFLICT` |
+| `0x0C` | `NOT_FOUND` |
+| `0x0D` | `ALREADY_EXISTS` |
+| `0x0E` | `GENERATION_MISMATCH` |
+| `0x0F` | `GROUP_BUSY` |
+| `0x10` | `OPERATION_BUSY` |
+| `0x11` | `NO_GROUP_SLOT` |
+| `0x12` | `NO_OPERATION_SLOT` |
+| `0x13` | `NO_BITMAP_MEMORY` |
+| `0x14` | `NO_AGGREGATION_SLOT` |
+| `0x15` | `NO_REPLAY_BUFFER` |
+| `0x16` | `NO_ROUTE_RESOURCE` |
+| `0x17` | `NO_REPLICATION_RESOURCE` |
+| `0x18` | `UNSUPPORTED_ARITHMETIC_TUPLE` |
+| `0x19` | `BAD_PAYLOAD_LENGTH` |
+| `0x1A` | `OUT_OF_WINDOW` |
+| `0x1B` | `RETRY` |
+| `0x1C` | `TIMEOUT` |
+| `0x1D` | `ABORTED` |
+| `0x1E` | `INTERNAL_ERROR` |
+
+<p class="protocol-registry__heading">Remaining numeric registries</p>
+
+Each name and value below is one canonical Protocol 1.0 assignment.
+
+| Registry | Assignments |
+|---|---|
+| Session state | `CLOSED=0x00`, `OPEN=0x01`, `EXPIRING=0x02`, `ORPHANED=0x03` |
+| Group state | `FREE=0x00`, `STAGED=0x01`, `INSTALLED=0x02`, `DESTROYING=0x03` |
+| Operation state | `FREE=0x00`, `PREPARED=0x01`, `ACTIVE=0x02`, `COMPLETE=0x03`, `RELEASING=0x04`, `ABORTED=0x05` |
+| Aggregation Slot state | `EMPTY=0x00`, `ACTIVE=0x01`, `OUTPUT_PENDING=0x02` |
+| Node role | `INVALID=0x00`, `LEAF=0x01`, `INTERNAL=0x02`, `ROOT=0x03`, `SINGLE=0x04` |
+| Next-hop type | `INVALID=0x00`, `SWITCH=0x01`, `RANK=0x02` |
+| Progress peer kind | `INVALID=0x00`, `CONTRIBUTOR=0x01`, `RESULT_PATH=0x02`, `ENDPOINT=0x03` |
+| Progress reason | `NONE=0x00`, `ACCEPTED=0x01`, `DUPLICATE=0x02`, `OUT_OF_WINDOW=0x03`, `NO_SLOT=0x04`, `STALE_GENERATION=0x05`, `BAD_PAYLOAD=0x06`, `RETRY_LATER=0x07`, `FATAL_OPERATION=0x08` |
+
+The `FEATURE_MASK` and `SUPPORTED_RELIABILITY_FEATURES` bit assignments are:
+
+| Value | Feature bit |
+|---:|---|
+| `0x0001` | `RELIABLE_HOP_BY_HOP` |
+| `0x0002` | `SELECTIVE_ACK` |
+| `0x0004` | `RESULT_ACK` |
+| `0x0008` | `LEASED_SESSIONS` |
+| `0x0010` | `MANAGEMENT_AUTH` |
+| `0x0020` | `MACSEC_MANAGEMENT_DOMAIN` |
+| `0x0040` | `EXTERNAL_BITMAP_MEMORY` |
+| `0x0080` | `EXACT_PARTIAL_WIRE` |
+
+</details>
+
+## Arithmetic support boundary
+
+Wire-format and accumulator values are registry assignments, not support
+claims. INT8 payload elements are signed two's-complement bytes; FP16 and FP32
+carry IEEE 754 binary16 and binary32 bit patterns; BF16 carries one sign bit,
+eight exponent bits, and seven fraction bits. Multibyte bit patterns are sent
+most-significant byte first.
+
+A node supports arithmetic only through an explicitly advertised
+`(input_format, accumulator_mode, output_format)` tuple. The present RTL does
+not yet freeze the required rounding, integer-overflow, NaN, infinity,
+subnormal, or signed-zero behavior, so no tuple is claimed as implemented RTL
+semantics in this pre-implementation draft. The FP32 / `DETERMINISTIC_FP32` /
+FP32 tuple in the host reference capability is a wire-encoding test fixture,
+not a hardware-support claim. When implemented, `DETERMINISTIC_FP32` uses
+ascending local Contributor ID order.
+
+The exact accumulator codes describe node-local finite accumulation. They do
+not provide global tree-independent exactness when a partial is serialized as
+FP32; that requires `EXACT_PARTIAL_WIRE` or another lossless merge format.
+
+<details class="protocol-registry" markdown="1">
+<summary>Security-profile assignments</summary>
+
+Protocol 1.0 assigns negotiation values but does not select a cryptographic
+primitive:
+
+| Value | Security profile | Reference meaning |
+|---:|---|---|
+| `0x00` | `LAB_UNAUTHENTICATED` | Laboratory bring-up without management authentication |
+| `0x01` | `EXTERNAL_AUTHENTICATED_CHANNEL` | Authentication is provided by the enclosing management channel |
+| `0x02` | `IN_PROTOCOL_AUTHENTICATION` | `AUTH_DATA` carries profile-defined authentication data |
+
+The canonical executable assignments are in
+`repo/traffic-gen/src/prism_protocol/constants.py`.
+
+</details>
+
+[^ethertype]: RFC 9542 reserves `0x88B5` and `0x88B6` for local experimental
+    use. They are appropriate for this research prototype, not a globally
+    assigned production protocol. <https://www.rfc-editor.org/rfc/rfc9542.html>

@@ -6,7 +6,7 @@ PRISM studies this problem at the packet-processing boundary. The goal is not to
 
 !!! question "PRISM reproducibility question"
 
-    Given the same logical reduction epoch, the same rank contributions, the same datatype, and the same exception policy, can a switch-like RTL datapath produce the same final floating-point bit pattern independently of packet timing and arbitration order?
+    Given the same Collective Operation identity and arithmetic descriptor, the same rank contributions, and the same exception policy, can a switch-like RTL datapath produce the same final floating-point bit pattern independently of packet timing and arbitration order?
 
 This matters for debugging, regression testing, numerical validation, checkpoint/restart workflows, and scientific or safety-critical workloads where bitwise differences make failures hard to reproduce. It also matters operationally: in a real cluster, the same job may be launched with the same number of ranks but mapped onto different nodes, leaf ports, or aggregation paths.
 
@@ -17,7 +17,7 @@ PRISM exposes reproducibility as a design space rather than as a single hard-cod
 | Strategy | Datapath idea | Reproducibility guarantee | Main cost |
 |---|---|---|---|
 | **Baseline FP32 accumulation** | Accumulate operands as packets arrive. | None beyond a particular run. | Lowest state and simplest datapath. |
-| **Deterministic FP32 scheduling** | Wait until all expected ranks for an epoch/lane have arrived, then add them in a fixed logical rank order or fixed tree. | Bitwise reproducible for the same rank set and same logical order. | Barrier-like behavior, buffering, contribution bitmaps, head-of-line blocking. |
+| **Deterministic FP32 scheduling** | Wait for all contributors expected by one chunk, then add them in ascending local Contributor ID order. | Bitwise reproducible for the same contributions and logical order. | Buffering, contribution bitmaps, head-of-line blocking. |
 | **Kulisch-style / superaccumulator path** | Convert each finite input into an exact fixed-point deposit; merge deposits with integer arithmetic; round once at the end. | Order-independent exact finite summation before final rounding. | Wide accumulator state, banking, carry management, final normalization, exception policy. |
 
 
@@ -29,7 +29,7 @@ flowchart LR
     B --> O1[Fast but order-dependent]
 
     S -->|Deterministic FP32| C[Wait for contribution bitmap]
-    C --> D[Rank-ordered FP32 tree]
+    C --> D[Sequential FP32 fold by Contributor ID]
     D --> O2[Bitwise stable for fixed logical order]
 
     S -->|Superaccumulator| E[Decode sign, exponent, significand]
@@ -39,6 +39,14 @@ flowchart LR
 ```
 
 The important distinction is that **deterministic scheduling fixes the order**, while a **superaccumulator removes the order as a numerical variable**. The first approach is cheaper and useful as a baseline. The second is more expensive, but it better matches the semantics expected from an order-independent collective reduction.
+
+!!! warning "Node-local versus global exactness"
+
+    This guarantee applies to the operands merged by one accumulator. In a
+    multi-level tree, serializing an exact local partial to FP32 rounds at that
+    hop. Global, tree-independent exactness requires a lossless partial-state
+    representation. Protocol 1.0 reserves an exact-partial capability but does
+    not yet define that representation.
 
 ## Why try superaccumulators now?
 
@@ -56,7 +64,7 @@ Finally, exact or reproducible accumulation maps naturally to hardware research 
 
 !!! note "Design intent"
 
-    PRISM does not assume that a superaccumulator is always the best engineering choice. The point is to measure the Pareto frontier between a cheap deterministic FP32 path and a wider exact-accumulation path under switch-like constraints: line-rate packet ingress, bounded on-chip state, epoch tracking, and packet-level scheduling.
+    PRISM does not assume that a superaccumulator is always the best engineering choice. The point is to measure the Pareto frontier between a cheap deterministic FP32 path and a wider exact-accumulation path under switch-like constraints: line-rate packet ingress, bounded on-chip state, operation tracking, and packet-level scheduling.
 
 ## Superaccumulator semantics
 
@@ -137,7 +145,7 @@ For example, with \(R=256\) ranks, an exact signed FP32 scalar-sum accumulator r
 278+\lceil\log_2 256\rceil = 286
 \]
 
-bits per reduction lane, before adding implementation metadata such as valid bits, exception flags, epoch tags, contribution bitmaps, or bank-selection state.
+bits per reduction lane, before adding implementation metadata such as valid bits, exception flags, operation tags, contribution bitmaps, or bank-selection state.
 
 !!! warning "Do not confuse scalar reduction with dot product"
 
@@ -175,7 +183,7 @@ PRISM therefore compares both paths:
 
 1. **Deterministic FP32 mode**, useful as a lower-area baseline and for studying scheduling determinism.
 2. **Superaccumulator mode**, useful for studying order-independent finite summation and the hardware cost of exact accumulation.
-3. **Wait-all epoch mode**, useful as a control policy to prevent early emission and arrival-order dependence, but not an arithmetic solution by itself.
+3. **Wait-all operation mode**, useful as a control policy to prevent early emission and arrival-order dependence, but not an arithmetic solution by itself.
 
 ## Expected outcome
 

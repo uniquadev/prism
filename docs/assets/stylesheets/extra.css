@@ -61,7 +61,12 @@
 
 .md-typeset__scrollwrap {
   margin: 1em 0;
-  overflow: visible;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .md-typeset__table {
@@ -77,6 +82,63 @@
 .md-typeset .admonition,
 .md-typeset details {
   border-radius: 8px;
+}
+
+.md-typeset details.protocol-registry {
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  margin: 1rem 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.md-typeset details.protocol-registry > summary {
+  align-items: center;
+  border-radius: 7px;
+  cursor: pointer;
+  display: flex;
+  font-weight: 700;
+  margin: 0;
+  min-height: 2.75rem;
+  overflow-wrap: anywhere;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  white-space: normal;
+}
+
+.md-typeset details.protocol-registry > summary::before {
+  content: none;
+  display: none;
+}
+
+.md-typeset details.protocol-registry > summary::after {
+  left: auto;
+  right: 0.8rem;
+  top: 50%;
+  transform: translateY(-50%) rotate(0deg);
+}
+
+.md-typeset details.protocol-registry[open] > summary::after {
+  transform: translateY(-50%) rotate(90deg);
+}
+
+.md-typeset details.protocol-registry[open] > summary {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 7px 7px 0 0;
+  margin-bottom: 0.75rem;
+}
+
+.md-typeset details.protocol-registry > :not(summary) {
+  box-sizing: border-box;
+  margin-left: 1rem;
+  margin-right: 1rem;
+  max-width: calc(100% - 2rem);
+}
+
+.md-typeset .protocol-registry__heading {
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  margin-top: 1.25rem;
 }
 
 .md-typeset code {
