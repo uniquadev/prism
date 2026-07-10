@@ -11,8 +11,8 @@ Il protocollo di base supporta due semantiche collettive in stile MPI:
 
 Il protocollo supporta tre modalità del data plane:
 
-1. **Inoltro trasparente dei pacchetti**, nel quale i frame Ethernet non locali
-   possono essere inoltrati attraverso la pipeline L2 simile a quella di uno switch.
+1. **Inoltro trasparente**, nel quale i frame Ethernet non locali attraversano
+   la pipeline L2.
 2. **Aggregazione streaming delle collettive**, nella quale i pacchetti
    `PM_OP_COL_DATA` aggiornano un contesto di riduzione e risalgono un albero di aggregazione.
 3. **Distribuzione dei risultati**, nella quale i pacchetti `PM_OP_COL_RES`
@@ -49,7 +49,7 @@ packet
     +48: "Dst MAC"
     +48: "Src MAC"
     +16: "Ethertype"
-    +16: "MS Control"
+    +16: "PRISM Control"
     +64: "Operation Header"
     +320: "First payload bytes"
 ```
@@ -59,7 +59,7 @@ packet
 | `Dst MAC` | 48b | MAC Ethernet di destinazione del next hop |
 | `Src MAC` | 48b | MAC Ethernet sorgente |
 | `Ethertype` | 16b | `0x88B5` per i frame sperimentali PRISM |
-| `MS Control` | 16b | `Version Major`, `Version Minor` e `Opcode` |
+| `PRISM Control` | 16b | `Version Major`, `Version Minor` e `Opcode` |
 | `Operation Header` | 64b | Header fisso specifico dell'opcode |
 | `First payload bytes` | 320b | Primo frammento di payload nel primo beat AXI-Stream a 512 bit |
 
@@ -95,11 +95,9 @@ esplicitamente. I campi riservati devono essere trasmessi a zero.
 
 ## Proprietà e inoltro dei frame
 
-PRISM utilizza un EtherType personalizzato per identificare i frame della
-famiglia di protocolli PRISM. Nel progetto sperimentale corrente viene usato
-`0x88B5`. Questo valore appartiene all'intervallo degli EtherType sperimentali
-locali ed è adatto a laboratorio e ricerca, ma non è un'assegnazione di
-protocollo per la produzione.[^ethertype]
+L'EtherType `0x88B5` identifica i frame PRISM. Il valore appartiene
+all'intervallo sperimentale locale: è adatto al laboratorio, ma non costituisce
+un'assegnazione per la produzione.[^ethertype]
 
 La classificazione PRISM avviene in tre fasi:
 
@@ -120,10 +118,10 @@ PRISM può essere configurato con una delle due politiche di inoltro esterne:
 
 | Politica | Comportamento |
 |---|---|
-| `MSP_TRANSPARENT` | I frame non locali vengono inoltrati attraverso il normale datapath L2. |
-| `MSP_STRICT` | I frame non locali o non PRISM vengono scartati o reindirizzati a un percorso di debug/controllo. |
+| `PM_TRANSPARENT` | I frame non locali vengono inoltrati attraverso il normale datapath L2. |
+| `PM_STRICT` | I frame non locali o non PRISM vengono scartati o reindirizzati a un percorso di debug/controllo. |
 
-La politica predefinita del prototipo è `MSP_TRANSPARENT`, perché durante il
+La politica predefinita del prototipo è `PM_TRANSPARENT`, perché durante il
 bring-up hardware PRISM deve comportarsi come un datapath di switching e non
 deve scartare inutilmente il normale traffico Ethernet.
 
@@ -196,18 +194,11 @@ Nel caso Ethernet standard non jumbo:
 \]
 
 \[
-\mathrm{MS\_CHUNK\_PAYLOAD\_BYTES}
-=
-1500 - 10
-=
-1490\ \mathrm{bytes}
-\]
-
-Pertanto, la dimensione predefinita del payload di un chunk PRISM per frame
-Ethernet standard è:
-
-\[
-\boxed{\mathrm{MS\_CHUNK\_PAYLOAD\_BYTES}=1490}
+\boxed{
+\mathrm{PM\_CHUNK\_PAYLOAD\_BYTES}
+=1500-10
+=1490\ \mathrm{bytes}
+}
 \]
 
 Il supporto ai jumbo frame è intenzionalmente escluso dal protocollo v0.1 e
@@ -236,7 +227,7 @@ Lo switch calcola il numero di chunk attesi dal contesto installato dall'AM:
 =
 \left\lceil
 \frac{\mathrm{vector\_bytes}}
-{\mathrm{MS\_CHUNK\_PAYLOAD\_BYTES}}
+{\mathrm{PM\_CHUNK\_PAYLOAD\_BYTES}}
 \right\rceil
 \]
 
@@ -291,16 +282,11 @@ definiti nel package RTL, nel testbench e nel generatore di pacchetti lato host.
 
 ## Setup in-band
 
-Per il prototipo FPGA iniziale PRISM usa un **modello di setup in-band** e
-chiama **Aggregation Manager** (**AM**) l'entità di controllo che installa i
-contesti delle collettive. L'AM è un singolo attore logico che conosce i
-partecipanti, la topologia fisica o logica e il posizionamento dei rank dietro
-gli switch.
-
-L'AM non deve necessariamente essere implementato come un singolo host fisico.
-Nel prototipo della tesi può essere software fidato, un componente del testbench
-o un processo di controllo lato host che invia pacchetti `PM_OP_COL_SETUP` per
-configurare ogni contesto locale allo switch.
+Il prototipo usa un **setup in-band**. L'**Aggregation Manager** (**AM**) è
+l'attore logico che conosce partecipanti e topologia e installa, tramite
+`PM_OP_COL_SETUP`, lo stato locale di ogni switch. Può essere implementato come
+software host fidato o come componente del testbench; non richiede un singolo
+host fisico dedicato.
 
 ```mermaid
 sequenceDiagram
@@ -319,10 +305,9 @@ sequenceDiagram
     CE->>RRT: instrada i chunk risultato completi
 ```
 
-La scelta è intenzionale. Per un prototipo FPGA connesso tramite un ambiente
-simile a OpenNIC, il setup in-band permette di configurare lo switch senza
-richiedere una CPU di management separata, un'interfaccia PCIe BAR, una mappa di
-registri AXI-Lite o uno stack di control plane esterno.
+Nella shell OpenNIC scelta per il primo prototipo, il setup in-band evita di
+richiedere una CPU di management separata, registri PCIe BAR o AXI-Lite e uno
+stack di control plane esterno.
 
 !!! warning "Ambito della sicurezza"
 
@@ -647,17 +632,13 @@ Il formato del payload risultato è determinato dal contesto configurato da
 `PM_OP_COL_SETUP`. Il formato di output può differire sia da quello di input sia
 dalla modalità interna dell'accumulatore.
 
-Esempio:
+Esempio di separazione tra formato esterno e accumulazione interna:
 
 ```text
 input_format     = PM_FMT_FP32
 accumulator_mode = PM_ACC_EXACT_FP32_MAG277
 output_format    = PM_FMT_FP32
 ```
-
-Gli elementi in ingresso vengono quindi ricevuti come `PM_FMT_FP32`, accumulati
-internamente con una famiglia di accumulatori esatti per somme scalari FP32 ed
-emessi come `PM_FMT_FP32`.
 
 ---
 
@@ -724,28 +705,13 @@ internamente i contributi.
 
 !!! note "Perché `MAG40`, `MAG261` e `MAG277`?"
 
-    I nomi indicano il range esatto della magnitudine della somma scalare prima
-    di aggiungere margine per i riporti dovuti al numero di rank e segno. Non
-    sono dimensioni di accumulatori per prodotti scalari. La larghezza signed
+    I nomi indicano l'intervallo esatto della magnitudine della somma scalare,
+    prima di aggiungere il margine per i riporti e il bit di segno. Non
+    sono dimensioni di accumulatori per prodotti scalari. La larghezza con segno
     finale dipende ancora dal numero massimo di rank contributori.
 
-Per la somma scalare finita esatta con \(R\) rank contributori:
-
-\[
-W_{\mathrm{signed}}
-=
-W_{\mathrm{mag}}
-+
-\lceil \log_2 R \rceil
-+
-1
-\]
-
-Questo segue il modello di dimensionamento della riduzione scalare, non il bound
-più ampio del prodotto scalare di Kulisch.[^superaccumulator-sizing]
-
 Per la derivazione dettagliata, vedi
-[1.2 Riproducibilità](../1-introduction/reproducibility.md#accumulator-sizing-for-scalar-reductions).
+[1.1 Riproducibilità](../1-introduction/reproducibility.md#accumulator-sizing-for-scalar-reductions).
 
 !!! note "Ruoli di input, accumulatore e output"
 
@@ -758,10 +724,8 @@ Per la derivazione dettagliata, vedi
 
 ## Esempio: `REDUCE(SUM, root = rank1)`
 
-L'esempio segue un chunk lungo l'intero ciclo di vita nominale del protocollo.
-Le stesse fasi del data plane vengono eseguite indipendentemente per ogni chunk
-configurato e indici differenti possono trovarsi contemporaneamente in fasi
-diverse.
+L'esempio segue un chunk nel ciclo di vita nominale; chunk differenti possono
+attraversare contemporaneamente fasi diverse.
 
 La topologia contiene uno spine, due leaf e quattro rank partecipanti:
 
@@ -783,15 +747,8 @@ sono attivi nella fase illustrata.
 
 ### 1. Installazione del contesto della collettiva
 
-L'AM conosce topologia, posizionamento dei partecipanti e rank root. Invia a
-ogni switch un frame `PM_OP_COL_SETUP` indirizzato individualmente. Il MAC
-Ethernet di destinazione identifica lo switch che consuma il frame di setup; gli
-switch intermedi si limitano a inoltrare i frame destinati a un altro nodo
-PRISM.
-
-In v0.1, l'AM installa lo stesso `Context ID` sul wire, indicato con `C`, lungo
-tutto l'albero perché non è definita una traduzione per hop. Lo stato locale
-rilevante è:
+L'AM configura ogni switch con un `PM_OP_COL_SETUP` unicast. In v0.1 lo stesso
+`Context ID = C` identifica il contesto lungo l'intero albero:
 
 | Nodo | Contributori locali attesi | Azione upstream dopo il completamento locale | Result route per il chunk `i` |
 |---|---|---|---|
@@ -799,9 +756,8 @@ rilevante è:
 | `L1` | `rank2`, `rank3` | Emette un `PM_OP_COL_DATA` verso `S0` come parent contributor configurato | Nessuna result route |
 | `S0` | `L0`, `L1` | Nessun parent; inietta il chunk completo come `PM_OP_COL_RES` | Gruppo di replica `{L0}` |
 
-Ogni entry del gruppo di replica contiene una porta egress locale e il MAC di
-destinazione del next hop. Uno switch necessita quindi soltanto della decisione
-locale e non scopre la topologia globale a runtime.
+Ogni switch conserva soltanto porta egress e MAC del next hop; la topologia
+globale rimane responsabilità dell'AM.
 
 <figure markdown="span">
   ![L'Aggregation Manager installa il contesto C e le result route selettive in S0, L0 e L1.](../../assets/images/protocol/reduce-lifecycle/01-context-setup.png){ loading=lazy }
@@ -810,15 +766,9 @@ locale e non scopre la topologia globale a runtime.
 
 ### 2. Invio dei contributi dei rank
 
-Per il chunk `i`, ogni rank invia un pacchetto `PM_OP_COL_DATA` al leaf locale.
-L'operation header trasporta il `Contributor ID` locale al leaf,
-`Context ID = C` e `Chunk Index = i`; il MAC Ethernet di destinazione seleziona
-il leaf ricevente.
-
-Il leaf usa `(Context ID, Contributor ID, Chunk Index)` per rifiutare duplicati
-e aggiornare l'accumulatore corretto. `Chunk Index` è anche la placement key:
-pacchetti di chunk differenti possono arrivare fuori ordine senza modificare il
-routing del risultato.
+Ogni rank invia `PM_OP_COL_DATA` al leaf locale. La tupla
+`(Context ID, Contributor ID, Chunk Index)` seleziona l'accumulatore e identifica
+i duplicati; chunk differenti possono arrivare fuori ordine.
 
 <figure markdown="span">
   ![Quattro pacchetti COL_DATA trasportano il chunk i dai rank ai rispettivi leaf locali.](../../assets/images/protocol/reduce-lifecycle/02-rank-contributions.png){ loading=lazy }
@@ -837,9 +787,8 @@ routing del risultato.
 \end{aligned}
 \]
 
-I due leaf non devono completarsi nello stesso istante. Ciascuno può emettere il
-proprio risultato parziale non appena soddisfa la condizione
-`expected_local_contributors`.
+Ogni leaf emette il proprio parziale appena raggiunge
+`expected_local_contributors`, indipendentemente dall'altro.
 
 <figure markdown="span">
   ![L0 e L1 completano indipendentemente le somme parziali del chunk i.](../../assets/images/protocol/reduce-lifecycle/03-local-reduction.png){ loading=lazy }
@@ -848,10 +797,9 @@ proprio risultato parziale non appena soddisfa la condizione
 
 ### 4. Aggregazione nello switch root
 
-L'azione upstream di ciascun leaf crea un nuovo pacchetto `PM_OP_COL_DATA`
-indirizzato a `S0`. Il suo `Contributor ID` è il `parent_contributor_id`
-configurato, quindi `S0` vede ogni intero sottoalbero leaf come un contributore,
-non i rank originali.
+Ogni leaf invia a `S0` un nuovo `PM_OP_COL_DATA` con il
+`parent_contributor_id` configurato: per lo spine, ciascun sottoalbero è un solo
+contributore.
 
 Dopo aver ricevuto i parziali da `L0` e `L1`, `S0` calcola
 
@@ -859,10 +807,9 @@ Dopo aver ricevuto i parziali da `L0` e `L1`, `S0` calcola
 \mathbf{result}[i] = \mathbf{partial}_0[i] + \mathbf{partial}_1[i].
 \]
 
-L'opcode selezionato dopo il completamento deriva dall'azione upstream
-installata, non dal MAC di destinazione: un nodo con `has_parent == 1` emette
-`PM_OP_COL_DATA`; la root di aggregazione ha `has_parent == 0` e inietta
-`PM_OP_COL_RES` nel percorso delle result route.
+Poiché `S0` ha `has_parent == 0`, il risultato entra nel percorso
+`PM_OP_COL_RES`; i nodi con parent continuano invece a emettere
+`PM_OP_COL_DATA`.
 
 <figure markdown="span">
   ![L0 e L1 inviano un parziale COL_DATA ciascuno a S0, che completa la somma finale.](../../assets/images/protocol/reduce-lifecycle/04-root-reduction.png){ loading=lazy }
@@ -871,24 +818,10 @@ installata, non dal MAC di destinazione: un nodo con `has_parent == 1` emette
 
 ### 5. Routing del risultato verso `rank1`
 
-`S0` cerca `(C, i)` nella tabella delle result route. Il gruppo di replica
-corrispondente contiene soltanto `L0`, quindi `S0` emette una replica
-`PM_OP_COL_RES` sulla porta egress di `L0` e imposta il MAC Ethernet di
-destinazione al MAC configurato di `L0`.
-
-`L0` consuma il frame indirizzato localmente ed esegue lo stesso lookup. Il suo
-gruppo di replica contiene soltanto `rank1`, quindi emette una replica con il
-MAC di destinazione di `rank1`. `L1`, `rank0`, `rank2` e `rank3` non ricevono
-traffico risultato.
-
-I due meccanismi hanno responsabilità distinte:
-
-- la result route e il gruppo di replica selezionano il next hop o i next hop locali;
-- il MAC Ethernet di destinazione identifica sul wire il next hop selezionato.
-
-La regola per hop funziona a qualunque profondità dell'albero: ogni switch
-intermedio ripete lookup locale e riscrittura del MAC. Nessuno switch deve
-dedurre se una porta raggiunga un leaf o un rank e non è necessario flooding.
+`S0` cerca `(C, i)` e seleziona il gruppo contenente `L0`; `L0` ripete il lookup
+e seleziona `rank1`. A ogni hop la result route sceglie l'uscita locale, mentre
+il `Dst MAC` identifica il next hop sul wire. Non servono conoscenza globale
+della topologia né flooding, e gli altri rank non ricevono il risultato.
 
 <figure markdown="span">
   ![COL_RES segue soltanto il percorso selettivo da S0 a L0 e rank1.](../../assets/images/protocol/reduce-lifecycle/05-selective-result-routing.png){ loading=lazy }
@@ -897,18 +830,9 @@ dedurre se una porta raggiunga un leaf o un rank e non è necessario flooding.
 
 ### 6. Consegna del risultato e rilascio dello stato del chunk
 
-`rank1` consuma il payload risultato. Lo stato dell'accumulatore del chunk non è
-più necessario dopo che uno switch ha consegnato correttamente il proprio output:
-
-- `L0` e `L1` rilasciano lo stato dopo aver emesso verso l'alto i pacchetti
-  `PM_OP_COL_DATA`;
-- `S0` rilascia lo stato dopo aver iniettato `PM_OP_COL_RES` nel percorso del risultato;
-- contesto, azioni upstream, result route e gruppi di replica configurati
-  rimangono installati per gli altri chunk della collettiva.
-
-In particolare, `L1` non attende un pacchetto risultato perché non appartiene
-all'albero dei risultati di `REDUCE`. L'inoltro dipende soltanto dallo stato
-persistente delle route, non dal mantenimento di un accumulatore completato.
+Dopo aver emesso il proprio output, ogni nodo rilascia lo stato temporaneo del
+chunk. Contesto e route rimangono installati; `L1` non deve quindi conservare
+l'accumulatore né attendere il risultato destinato a `rank1`.
 
 <figure markdown="span">
   ![Rank1 ha ricevuto il risultato i, gli stati dei chunk sono rilasciati e il setup rimane installato.](../../assets/images/protocol/reduce-lifecycle/06-delivery-and-state-release.png){ loading=lazy }
@@ -933,16 +857,7 @@ riceve una replica del risultato per livello, senza broadcast su porte estranee.
 
 ---
 
-## Ciclo di vita e comportamento non valido
-
-Il contesto e le tabelle di route configurati sono stato persistente del control
-plane. Lo stato dell'accumulatore per chunk è stato temporaneo del data plane.
-
-Uno switch può rilasciare lo stato locale dell'accumulatore dopo aver emesso con
-successo il chunk completo verso l'alto come `PM_OP_COL_DATA` o averlo iniettato
-nel percorso delle result route come `PM_OP_COL_RES`. Un leaf che partecipa a
-`ALLREDUCE` non deve mantenere lo stato mentre attende il ritorno del risultato:
-l'inoltro usa le tabelle persistenti.
+## Comportamento non valido
 
 Un pacchetto non è valido se usa versioni major non supportate, opcode
 sconosciuti, valori di setup non supportati, campi riservati non nulli,
@@ -965,8 +880,3 @@ sono fuori dall'ambito del primo protocollo della tesi.
     jumbo. L'header Ethernet è di 14 byte e l'FCS di 4; preambolo, SFD e
     interpacket gap sono overhead del livello fisico e normalmente non fanno
     parte del payload AXI-Stream visto da PRISM.
-
-[^superaccumulator-sizing]: La regola di dimensionamento segue il modello di
-    riduzione scalare PRISM. È intenzionalmente diversa dal bound più ampio
-    del prodotto scalare di Kulisch, perché le riduzioni PRISM sommano valori
-    numerici già calcolati, non prodotti.

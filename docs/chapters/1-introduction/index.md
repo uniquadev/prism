@@ -47,4 +47,3 @@ If you use PRISM in your project, please cite the repository and/or the thesis:
 [^mpi-reduce]: MPI Forum, *MPI 4.1 Standard*, `MPI_Reduce`. The standard notes that implementations may change reduction order using associativity/commutativity and that this can change results for floating-point addition. https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node130.htm
 [^sharp]: Mellanox SHARP: Scalable Hierarchical Aggregation and Reduction Protocol.
 [^kulisch]: Kulisch, Ulrich W. "Computer Arithmetic and Validity: Theory, Implementation, and Applications." Walter de Gruyter, 2002.
-[^mpi-collectives]: MPI collective operations: https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node90.htm

@@ -48,7 +48,7 @@ packet
     +48: "Dst MAC"
     +48: "Src MAC"
     +16: "Ethertype"
-    +16: "MS Control"
+    +16: "PRISM Control"
     +64: "Operation Header"
     +320: "First payload bytes"
 ```
@@ -58,7 +58,7 @@ packet
 | `Dst MAC` | 48b | Ethernet next-hop destination MAC |
 | `Src MAC` | 48b | Ethernet source MAC |
 | `Ethertype` | 16b | `0x88B5` for PRISM experimental frames |
-| `MS Control` | 16b | `Version Major`, `Version Minor`, and `Opcode` |
+| `PRISM Control` | 16b | `Version Major`, `Version Minor`, and `Opcode` |
 | `Operation Header` | 64b | Opcode-specific fixed header |
 | `First payload bytes` | 320b | First payload fragment in the first 512-bit AXI-Stream beat |
 
@@ -119,10 +119,10 @@ PRISM may be configured with one of two outer forwarding policies:
 
 | Policy | Behavior |
 |---|---|
-| `MSP_TRANSPARENT` | Non-local frames are forwarded through the normal L2 forwarding datapath. |
-| `MSP_STRICT` | Non-local or non-PRISM frames are dropped or redirected to a debug/control path. |
+| `PM_TRANSPARENT` | Non-local frames are forwarded through the normal L2 forwarding datapath. |
+| `PM_STRICT` | Non-local or non-PRISM frames are dropped or redirected to a debug/control path. |
 
-The default prototype policy is expected to be `MSP_TRANSPARENT`, because
+The default prototype policy is expected to be `PM_TRANSPARENT`, because
 PRISM is intended to behave as a switch-like datapath during hardware
 bring-up and should not unnecessarily discard ordinary Ethernet traffic.
 
@@ -192,7 +192,7 @@ For the standard non-jumbo Ethernet case:
 \]
 
 \[
-\mathrm{MS\_CHUNK\_PAYLOAD\_BYTES}
+\mathrm{PM\_CHUNK\_PAYLOAD\_BYTES}
 =
 1500 - 10
 =
@@ -203,7 +203,7 @@ Therefore, the default PRISM chunk payload size for standard Ethernet frames
 is:
 
 \[
-\boxed{\mathrm{MS\_CHUNK\_PAYLOAD\_BYTES}=1490}
+\boxed{\mathrm{PM\_CHUNK\_PAYLOAD\_BYTES}=1490}
 \]
 
 Jumbo-frame support is intentionally left outside the v0.1 protocol baseline and
@@ -233,7 +233,7 @@ the AM:
 =
 \left\lceil
 \frac{\mathrm{vector\_bytes}}
-{\mathrm{MS\_CHUNK\_PAYLOAD\_BYTES}}
+{\mathrm{PM\_CHUNK\_PAYLOAD\_BYTES}}
 \right\rceil
 \]
 

@@ -24,12 +24,9 @@ domanda più circoscritta è:
     in virgola mobile indipendentemente dal timing dei pacchetti e dall'ordine
     di arbitraggio?
 
-La proprietà è importante per debugging, regression test, validazione numerica,
-workflow di checkpoint/restart e carichi scientifici o safety-critical, nei
-quali differenze a livello di bit rendono difficile riprodurre un errore. È
-importante anche dal punto di vista operativo: in un cluster reale, lo stesso
-job può essere avviato con lo stesso numero di rank ma mappato su nodi, porte
-leaf o percorsi di aggregazione differenti.
+La proprietà è rilevante per debugging, regression test, validazione numerica e
+checkpoint/restart: lo stesso job può conservare rank e input ma attraversare
+nodi, porte leaf o alberi di aggregazione differenti.
 
 ## Strategie candidate
 
@@ -39,8 +36,8 @@ un'unica scelta aritmetica codificata rigidamente.
 | Strategia | Idea per il datapath | Garanzia di riproducibilità | Costo principale |
 |---|---|---|---|
 | **Accumulazione FP32 di base** | Accumula gli operandi nell'ordine di arrivo dei pacchetti. | Nessuna oltre la singola esecuzione. | Stato minimo e datapath più semplice. |
-| **Scheduling FP32 deterministico** | Attende tutti i rank previsti per un'epoca/lane, quindi li somma secondo un ordine logico dei rank o un albero prefissato. | Riproducibilità bitwise per lo stesso insieme di rank e lo stesso ordine logico. | Comportamento simile a una barriera, buffering, bitmap dei contributi e head-of-line blocking. |
-| **Percorso in stile Kulisch / superaccumulatore** | Converte ogni input finito in un deposito fixed-point esatto, combina i depositi con aritmetica intera e arrotonda una sola volta alla fine. | Somma finita esatta e indipendente dall'ordine prima dell'arrotondamento finale. | Stato dell'accumulatore ampio, banking, gestione dei riporti, normalizzazione finale e politica delle eccezioni. |
+| **Scheduling FP32 deterministico** | Attende i contributori previsti per il chunk e li somma secondo un ordine logico o un albero prefissato. | Riproducibilità bitwise per lo stesso insieme di contributi e lo stesso ordine logico. | Buffering, bitmap dei contributi e head-of-line blocking. |
+| **Percorso in stile Kulisch / superaccumulatore** | Mappa ogni input finito in una rappresentazione fixed-point esatta, combina i contributi con aritmetica intera e arrotonda una sola volta alla fine. | Somma finita esatta e indipendente dall'ordine prima dell'arrotondamento finale. | Stato dell'accumulatore ampio, banking, gestione dei riporti, normalizzazione finale e politica delle eccezioni. |
 
 
 ```mermaid
@@ -55,7 +52,7 @@ flowchart LR
     D --> O2[Bitwise stabile per un ordine logico fisso]
 
     S -->|Superaccumulatore| E[Decodifica segno, esponente e significando]
-    E --> F[Deposito fixed-point esatto]
+    E --> F[Rappresentazione fixed-point esatta]
     F --> G[Normalizzazione e singolo arrotondamento]
     G --> O3[Somma finita indipendente dall'ordine]
 ```
@@ -68,54 +65,25 @@ una riduzione collettiva indipendente dall'ordine.
 
 ## Perché sperimentare ora con i superaccumulatori?
 
-La motivazione è oggi più forte di quanto sarebbe stata dieci anni fa.
+Tre sviluppi rendono oggi significativa questa domanda:
 
-In primo luogo, l'offload in-network delle operazioni collettive non è più
-un'idea esotica. NVIDIA/Mellanox SHARP[^sharp-overview] ha portato nodi di
-aggregazione, alberi di aggregazione e offload delle collettive nel vocabolario
-dei fabric HPC e AI di produzione. SHARP[^sharp-blog] dimostra che spostare il
-lavoro di riduzione nella rete può ridurre il traffico ridondante agli endpoint
-e liberare risorse CPU/GPU dall'elaborazione della comunicazione.
+- **INC nei sistemi reali.** SHARP ha portato l'offload delle collettive nei
+  fabric HPC e AI di produzione[^sharp-overview][^sharp-blog]; SwitchML ha
+  mostrato il beneficio dell'aggregazione in-network per l'addestramento
+  distribuito[^switchml].
+- **Precisione mista.** Formati ridotti quali FP8 E4M3 ed E5M2 riducono traffico
+  e costo computazionale, ma richiedono spesso un'accumulazione più ampia o più
+  stabile[^nvidia-fp8]. La semantica dell'accumulatore diventa quindi parte
+  dell'accuratezza del sistema.
+- **Limiti dei datapath programmabili.** Le pipeline nate per il packet
+  processing non offrono naturalmente aritmetica floating-point applicativa;
+  FPISA documenta il costo dei workaround necessari[^fpisa]. Un prototipo FPGA
+  dedicato permette invece di misurare direttamente questa funzione.
 
-In secondo luogo, i carichi distribuiti AI e HPC operano sempre più spesso a
-scale nelle quali la comunicazione collettiva è un limite prestazionale di primo
-ordine. Sistemi come SwitchML[^switchml] hanno mostrato che aggregare gli
-aggiornamenti dei modelli nella rete può migliorare le prestazioni end-to-end
-dell'addestramento distribuito, riducendo i dati scambiati ed evitando parte
-dell'overhead di comunicazione lato host.
-
-In terzo luogo, gli acceleratori moderni utilizzano già precisione mista. I
-formati FP8 in stile NVIDIA H100[^nvidia-fp8] comprendono E4M3 ed E5M2: in
-genere E4M3 viene scelto per i valori forward più sensibili alla precisione ed
-E5M2 per gradienti con maggiore range dinamico. Questo rende la semantica
-dell'accumulazione più importante, non meno: payload a bassa precisione sono
-spesso accettabili soltanto perché l'accumulazione avviene in un formato più
-ampio o più stabile.
-
-In quarto luogo, i datapath degli switch programmabili convenzionali sono stati
-progettati principalmente per elaborare pacchetti, non per eseguire aritmetica
-in virgola mobile a livello applicativo. Il lavoro su FPISA[^fpisa] identifica
-esplicitamente i dati floating-point nell'addestramento distribuito e nel query
-processing come casi nei quali l'hardware di switching esistente richiede
-workaround costosi o supporto architetturale. PRISM si colloca quindi come
-strumento di ricerca RTL: invece di emulare la virgola mobile in una pipeline
-P4/RMT vincolata, studia il costo di un datapath FPGA dedicato.
-
-Infine, l'accumulazione esatta o riproducibile si traduce naturalmente in
-domande di ricerca hardware: larghezza dell'accumulatore, organizzazione
-carry-save rispetto a carry-propagate, file di accumulatori bancati, pressione
-su BRAM/URAM, initiation interval, Fmax, comportamento della backpressure e
-latenza dell'arrotondamento finale. Sono precisamente i compromessi che un
-prototipo RTL compatto può mettere in evidenza.
-
-!!! note "Obiettivo progettuale"
-
-    PRISM non assume che un superaccumulatore sia sempre la scelta
-    ingegneristica migliore. L'obiettivo è misurare la frontiera di Pareto tra un
-    percorso FP32 deterministico economico e un percorso di accumulazione esatta
-    più ampio, rispettando vincoli simili a quelli di uno switch: ingresso dei
-    pacchetti a line rate, stato on-chip limitato, tracciamento delle epoche e
-    scheduling a livello di pacchetto.
+La domanda hardware è dunque quantitativa: quale frontiera di Pareto emerge tra
+un percorso FP32 deterministico e un superaccumulatore, considerando area,
+BRAM/URAM, banking, riporti, initiation interval, Fmax, backpressure e latenza
+dell'arrotondamento finale?
 
 ## Semantica del superaccumulatore
 
@@ -125,21 +93,19 @@ Per un input binario finito in virgola mobile, il riduttore decodifica:
 x = (-1)^s M 2^{e-(p-1)}
 \]
 
-dove (p) è la precisione del significando, incluso il bit implicito, (M) è
-il significando intero ed (e) è l'esponente unbiased. Anche i valori subnormal
-sono multipli esatti della più piccola unità subnormal:
+dove \(p\) è la precisione del significando, incluso il bit implicito, \(M\) è
+il significando intero ed \(e\) è l'esponente unbiased. Anche i valori
+subnormali sono multipli esatti della più piccola unità subnormale:
 
 \[
 2^{E_{\min}-(p-1)}.
 \]
 
-Un accumulatore per somme scalari in stile Kulisch sceglie questa unità minima
-come bit meno significativo fixed-point. Ogni operando floating-point in
-ingresso viene depositato nella posizione fixed-point corrispondente. Poiché la
-rappresentazione intermedia è uno stato intero esatto, la somma di due depositi
-è associativa e commutativa entro la capacità dell'accumulatore. Il risultato
-floating-point finale viene prodotto normalizzando la somma intera esatta e
-arrotondandola una sola volta secondo la modalità selezionata.
+Un accumulatore per somme scalari in stile Kulisch sceglie questa unità come bit
+fixed-point meno significativo. Ogni operando viene allineato alla posizione
+corrispondente; la rappresentazione intermedia intera rende la somma associativa
+e commutativa entro la capacità dell'accumulatore. Il risultato floating-point
+si ottiene normalizzando la somma esatta e arrotondandola una sola volta.
 
 Si ottiene così una separazione netta tra timing di rete e semantica aritmetica:
 
@@ -151,7 +117,7 @@ I valori speciali devono essere gestiti fuori dal datapath fixed-point. NaN,
 infiniti, zeri con segno, operazioni non valide e overflow del formato finale
 devono essere tracciati mediante flag sideband deterministici e una politica di
 canonicalizzazione documentata. Il superaccumulatore finito deve ricevere
-soltanto depositi numerici finiti.
+soltanto contributi numerici finiti.
 
 ## Dimensionamento dell'accumulatore per riduzioni scalari { #accumulator-sizing-for-scalar-reductions }
 
@@ -164,40 +130,43 @@ di PRISM,
 
 il bound rilevante **non** è quello del prodotto scalare. Siano:
 
-- (R) il numero massimo di partecipanti che contribuiscono a un elemento di riduzione;
-- (p) la precisione del significando, incluso il bit implicito;
-- (E_{\min}) l'esponente normal minimo;
-- (E_{\max}) l'esponente normal massimo.
+- \(R\) il numero massimo di partecipanti che contribuiscono a un elemento di riduzione;
+- \(p\) la precisione del significando, incluso il bit implicito;
+- \(E_{\min}\) l'esponente minimo dei numeri normalizzati;
+- \(E_{\max}\) l'esponente massimo dei numeri normalizzati.
 
-Per una somma scalare finita esatta che include i subnormal:
+Per una somma scalare finita esatta che include i subnormali:
 
 \[
 W_{\mathrm{mag}} = E_{\max} - E_{\min} + p
 \]
 
-e la larghezza dell'accumulatore signed in complemento a due è:
+e la larghezza dell'accumulatore con segno in complemento a due è:
 
 \[
 W_{\mathrm{signed}} =
 W_{\mathrm{mag}} + \lceil \log_2 R \rceil + 1.
 \]
 
-Il termine (+\lceil \log_2 R\rceil) è il margine per il riporto necessario a
-sommare (R) operandi dello stesso segno e di magnitudine massima. Il (+1)
+Il termine \(+\lceil \log_2 R\rceil\) è il margine per il riporto necessario a
+sommare \(R\) operandi dello stesso segno e di magnitudine massima. Il \(+1\)
 finale è il bit di segno.
 
-| Formato di input | (p) | (E_{\min}) | (E_{\max}) | Bit esatti della magnitudine scalare | Accumulatore signed per (R) partecipanti |
+| Formato di input | \(p\) | \(E_{\min}\) | \(E_{\max}\) | Bit esatti della magnitudine scalare | Accumulatore con segno per \(R\) partecipanti |
 |---|---:|---:|---:|---:|---:|
-| FP8 E4M3FN | 4 | -6 | 8 | 18 | (19+\lceil\log_2 R\rceil\) |
-| FP8 E4M3FNUZ | 4 | -7 | 7 | 18 | (19+\lceil\log_2 R\rceil\) |
-| FP8 E5M2 | 3 | -14 | 15 | 32 | (33+\lceil\log_2 R\rceil\) |
-| FP8 E5M2FNUZ | 3 | -15 | 15 | 33 | (34+\lceil\log_2 R\rceil\) |
-| IEEE FP16 / binary16 | 11 | -14 | 15 | 40 | (41+\lceil\log_2 R\rceil\) |
-| BF16 | 8 | -126 | 127 | 261 | (262+\lceil\log_2 R\rceil\) |
-| IEEE FP32 / binary32 | 24 | -126 | 127 | 277 | (278+\lceil\log_2 R\rceil\) |
+| FP8 E4M3FN | 4 | -6 | 8 | 18 | \(19+\lceil\log_2 R\rceil\) |
+| FP8 E4M3FNUZ | 4 | -7 | 7 | 18 | \(19+\lceil\log_2 R\rceil\) |
+| FP8 E5M2 | 3 | -14 | 15 | 32 | \(33+\lceil\log_2 R\rceil\) |
+| FP8 E5M2FNUZ | 3 | -15 | 15 | 33 | \(34+\lceil\log_2 R\rceil\) |
+| IEEE FP16 / binary16 | 11 | -14 | 15 | 40 | \(41+\lceil\log_2 R\rceil\) |
+| BF16 | 8 | -126 | 127 | 261 | \(262+\lceil\log_2 R\rceil\) |
+| IEEE FP32 / binary32 | 24 | -126 | 127 | 277 | \(278+\lceil\log_2 R\rceil\) |
+
+Le righe FP8 estendono l'analisi di dimensionamento, ma non implicano il loro
+supporto sul wire nel protocollo v0.1.
 
 Pertanto, un singolo accumulatore per riduzioni scalari che copra FP8, FP16,
-BF16 e FP32 è dominato dal range degli esponenti FP32/BF16:
+BF16 e FP32 è dominato dall'intervallo degli esponenti FP32/BF16:
 
 \[
 \boxed{
@@ -206,7 +175,7 @@ W_{\mathrm{FP32\ scalar\ reduce}} =
 }
 \]
 
-Per esempio, con (R=256) rank, un accumulatore signed esatto per somme scalari
+Per esempio, con \(R=256\) rank, un accumulatore esatto con segno per somme scalari
 FP32 richiede:
 
 \[
@@ -217,75 +186,37 @@ bit per lane di riduzione, prima di aggiungere metadati implementativi come bit
 di validità, flag di eccezione, tag di epoca, bitmap dei contributi o stato di
 selezione delle banche.
 
-!!! warning "Non confondere riduzione scalare e prodotto scalare"
+!!! warning "Riduzione scalare, non prodotto scalare"
 
-    Il bound più ampio del prodotto scalare di Kulisch si applica a:
-
-    \[
-    \sum_{i=1}^{N} a_i b_i,
-    \]
-
-    non a una normale somma collettiva di valori floating-point già calcolati.
-    Per un prodotto scalare, il range esatto del prodotto raddoppia
-    approssimativamente l'intervallo degli esponenti:
-
-    \[
-    W_{\mathrm{dot\ mag}} =
-    2(E_{\max}-E_{\min}) + 2p,
-    \]
-
-    e:
-
-    \[
-    W_{\mathrm{dot\ signed}} =
-    W_{\mathrm{dot\ mag}}+\lceil\log_2 N\rceil+1.
-    \]
-
-    Per l'accumulazione di un prodotto scalare FP32 si ottengono
-    (555+\lceil\log_2 N\rceil) bit signed. Questo valore è appropriato per un
-    motore MAC esatto, non per una somma scalare in stile `ALLREDUCE`.
+    PRISM somma valori floating-point già calcolati. Il bound più ampio di un
+    accumulatore Kulisch per \(\sum_i a_i b_i\), che deve rappresentare
+    esattamente anche i prodotti, riguarda un motore MAC ed è fuori ambito.
 
 ## Perché non preservare soltanto l'ordine FP32?
 
-Preservare un ordine floating-point rigoroso è un riferimento valido, ma non
-equivale all'accumulazione esatta.
+Un riduttore FP32 deterministico arrotonda dopo ogni addizione: rende il
+risultato ripetibile, ma incorpora nell'algoritmo l'ordine scelto. Variazioni nel
+numero di rank, nel chunking o nelle somme parziali possono ancora cambiare il
+risultato. Il superaccumulatore, invece, deposita esattamente gli operandi finiti
+e arrotonda una sola volta.
 
-Un riduttore FP32 deterministico arrotonda comunque dopo ogni addizione. Può
-rendere ripetibile il risultato, ma l'ordine selezionato diventa parte
-dell'algoritmo numerico. Un numero di rank, un chunking o somme parziali locali
-differenti possono ancora cambiare il risultato. Un accumulatore finito esatto,
-al contrario, rende la riduzione indipendente dall'ordine nel quale vengono
-depositati gli operandi finiti; rimane soltanto l'arrotondamento finale.
-
-Preservare l'ordine può inoltre contrastare lo scopo dell'in-network computing.
-Se la riproducibilità viene ottenuta raccogliendo gli operandi su una root,
-serializzando la riduzione o inoltrando accumulatori FP32 intermedi tra gli
-endpoint, il progetto può reintrodurre l'overhead di comunicazione e
-sincronizzazione che INC intende evitare. Un superaccumulatore locale è
-interessante perché mantiene il costo della riproducibilità nel nodo di
-aggregazione senza ampliare il formato del payload sul wire.
-
-PRISM confronta quindi entrambi i percorsi:
-
-1. **Modalità FP32 deterministica**, utile come riferimento a bassa area e per studiare il determinismo dello scheduling.
-2. **Modalità superaccumulatore**, utile per studiare la somma finita indipendente dall'ordine e il costo hardware dell'accumulazione esatta.
-3. **Modalità wait-all per epoca**, utile come politica di controllo per impedire emissioni anticipate e dipendenza dall'ordine di arrivo, ma non sufficiente da sola come soluzione aritmetica.
+PRISM confronta quindi **due datapath aritmetici**: FP32 deterministico, come
+riferimento a minore area, e accumulazione esatta, indipendente dall'ordine. La
+condizione di completamento — tutti i contributori attesi per il chunk — è un
+requisito di controllo comune; non costituisce una terza modalità aritmetica.
 
 ## Risultato atteso
 
-Il contributo atteso non è affermare che i superaccumulatori siano sempre
-migliori. È una misura a livello implementativo del compromesso:
+Il contributo atteso è una misura implementativa del compromesso:
 
 \[
 \text{riproducibilità} \quad \leftrightarrow \quad
 \text{area} + \text{stato} + \text{latenza} + \text{pressione sul timing}.
 \]
 
-Questo è il punto di ricerca centrale di PRISM: se un datapath simile a uno
-switch contiene già stato del parser, VOQ, memoria condivisa per i pacchetti,
-arbitraggio, backpressure e slot di aggregazione, la domanda aperta è se
-l'accumulazione floating-point esatta o quasi esatta possa essere integrata
-senza compromettere il funzionamento a line rate.
+La domanda non è quindi se il superaccumulatore sia sempre preferibile, ma a
+quali condizioni possa essere integrato senza compromettere il funzionamento a
+line rate.
 
 [^sharp-overview]: Documentazione NVIDIA, *Scalable Hierarchical Aggregation and
     Reduction Protocol (SHARP)*. SHARP viene descritto come offload delle

@@ -4,18 +4,16 @@ title: PRISM
 
 # PRISM
 
-PRISM (**Precision-aware Reduction In-Switch Module**) è un prototipo di ricerca
-RTL open source per le operazioni collettive in-network (INC) su datapath FPGA
-per l'elaborazione dei pacchetti. Il nome richiama un prisma che rifrange la luce
-in più direzioni, ricordando la distribuzione dei risultati studiata durante la
-fase di broadcast. Il progetto
-studia come le operazioni collettive basate su riduzione, come l'aggregazione
-`REDUCE_SUM`[^mpi-reduce], possano essere parzialmente trasferite dallo stack di
-comunicazione dell'acceleratore host (CPU/GPU) al data plane della rete. In
-questo senso, PRISM si ispira alla stessa direzione generale di
-Mellanox/NVIDIA SHARP[^sharp], che ha dimostrato come l'elaborazione delle
-riduzioni collettive possa essere spostata nell'hardware di switching per
-ridurre il traffico di comunicazione e la latenza delle operazioni collettive.
+PRISM (**Precision-aware Reduction In-Switch Module**) è un prototipo RTL open
+source per lo studio delle operazioni collettive in-network (INC) su FPGA. Il
+nome richiama un prisma che rifrange la luce lungo più direzioni, analogamente
+alla distribuzione dei risultati nella fase di broadcast. Il progetto studia
+come riduzioni collettive quali `REDUCE_SUM`[^mpi-reduce] possano essere
+parzialmente trasferite dallo stack di comunicazione dell'acceleratore host
+(CPU/GPU) al data plane della rete. PRISM si colloca quindi nella direzione
+aperta da Mellanox/NVIDIA SHARP[^sharp]: eseguire parte della riduzione
+nell'hardware di switching per diminuire il traffico agli endpoint e la latenza
+delle collettive.
 
 !!! abstract "Obiettivo"
 
@@ -28,26 +26,20 @@ ridurre il traffico di comunicazione e la latenza delle operazioni collettive.
     a line rate, l'accumulazione streaming delle operazioni collettive e una
     migliore riproducibilità in virgola mobile?**
 
-Il progetto adotta un'interfaccia AXI-Stream a 512 bit ed è pensato per essere
-integrato in una shell FPGA NIC/smartNIC, per esempio una piattaforma simile a
-OpenNIC. Il data plane comprende parsing dei pacchetti, classificazione L2,
-gestione di un EtherType personalizzato, versionamento del protocollo, Virtual
-Output Queueing (VOQ), memoria condivisa per i pacchetti, arbitraggio egress a
-livello di pacchetto, inoltro cut-through e un motore streaming per le operazioni
-collettive.
+Il datapath espone un'interfaccia AXI-Stream a 512 bit. Per il primo prototipo,
+**OpenNIC è la piattaforma di riferimento**: fornisce la shell entro cui
+sintetizzare PRISM su FPGA e l'integrazione con la NIC, i driver e il software
+host.
 
-Dal punto di vista numerico, PRISM si concentra sulle riduzioni in virgola
-mobile riproducibili. Le riduzioni FP32 convenzionali dipendono dall'ordine degli
-operandi, perché l'addizione in virgola mobile non è associativa; alberi di
-riduzione o ordini di scheduling differenti possono quindi produrre risultati
-diversi a livello di bit. PRISM confronta un percorso di accumulazione FP32
-di riferimento con un accumulatore lungo in stile Kulisch[^kulisch], con
-l'obiettivo di misurare i compromessi di area, latenza, throughput e
-riproducibilità dell'accumulazione esatta o quasi esatta in un datapath di rete
-streaming.
+Sul piano numerico, PRISM studia riduzioni in virgola mobile riproducibili.
+Poiché l'addizione floating-point non è associativa, alberi di riduzione o
+ordini di scheduling diversi possono produrre risultati differenti a livello di
+bit. Il progetto confronta quindi un percorso FP32 di riferimento con un
+accumulatore lungo in stile Kulisch[^kulisch], misurandone area, latenza,
+throughput e riproducibilità.
 
-Dal punto di vista dello switching, PRISM implementa uno **scheletro di data
-plane ispirato agli switch**, non uno switch di produzione completo. Include
+Sul piano dell'architettura, PRISM implementa uno **scheletro di data plane
+ispirato agli switch**, non uno switch di produzione completo. Include
 meccanismi comuni negli switch ad alte prestazioni, come arbitraggio per uscita,
 buffering in stile VOQ, memorizzazione condivisa dei pacchetti, propagazione
 della backpressure e scheduling a livello di pacchetto. Funzionalità avanzate
@@ -73,7 +65,7 @@ Se utilizzi PRISM nel tuo progetto, cita il repository e/o la tesi:
 
 -   :material-map-marker-path: **Prima lettura**
 
-    Inizia da [1.2 Riproducibilità](chapters/1-introduction/reproducibility.md),
+    Inizia da [1.1 Riproducibilità](chapters/1-introduction/reproducibility.md),
     quindi passa alla panoramica [2. Per iniziare](chapters/2-getting-started/index.md).
 
 -   :material-chip: **Vista hardware**
@@ -98,5 +90,3 @@ Se utilizzi PRISM nel tuo progetto, cita il repository e/o la tesi:
 [^sharp]: Mellanox SHARP: Scalable Hierarchical Aggregation and Reduction Protocol.
 [^kulisch]: Kulisch, Ulrich W. *Computer Arithmetic and Validity: Theory,
     Implementation, and Applications.* Walter de Gruyter, 2002.
-[^mpi-collectives]: Operazioni collettive MPI:
-    https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node90.htm
