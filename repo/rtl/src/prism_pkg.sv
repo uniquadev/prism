@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-package mini_sharp_pkg;
+package prism_pkg;
 
   
 

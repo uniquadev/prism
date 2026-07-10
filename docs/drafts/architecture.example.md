@@ -1,6 +1,6 @@
 # 3. Architecture
 
-Mini-Sharp is organized around a narrow datapath that recognizes collective
+PRISM is organized around a narrow datapath that recognizes collective
 operation packets, applies a primitive operation, and forwards or buffers the
 result according to the packet state.
 

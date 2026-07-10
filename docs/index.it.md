@@ -1,22 +1,25 @@
 ---
-title: MiniSharp
+title: PRISM
 ---
 
-# MiniSharp
+# PRISM
 
-MiniSharp è un prototipo di ricerca RTL open source per le operazioni collettive
-in-network (INC) su datapath FPGA per l'elaborazione dei pacchetti. Il progetto
+PRISM (**Precision-aware Reduction In-Switch Module**) è un prototipo di ricerca
+RTL open source per le operazioni collettive in-network (INC) su datapath FPGA
+per l'elaborazione dei pacchetti. Il nome richiama un prisma che rifrange la luce
+in più direzioni, ricordando la distribuzione dei risultati studiata durante la
+fase di broadcast. Il progetto
 studia come le operazioni collettive basate su riduzione, come l'aggregazione
 `REDUCE_SUM`[^mpi-reduce], possano essere parzialmente trasferite dallo stack di
 comunicazione dell'acceleratore host (CPU/GPU) al data plane della rete. In
-questo senso, MiniSharp si ispira alla stessa direzione generale di
+questo senso, PRISM si ispira alla stessa direzione generale di
 Mellanox/NVIDIA SHARP[^sharp], che ha dimostrato come l'elaborazione delle
 riduzioni collettive possa essere spostata nell'hardware di switching per
 ridurre il traffico di comunicazione e la latenza delle operazioni collettive.
 
 !!! abstract "Obiettivo"
 
-    MiniSharp **non** cerca di clonare SHARP, né di riprodurre tutte le
+    PRISM **non** cerca di clonare SHARP, né di riprodurre tutte le
     funzionalità di uno switch ASIC InfiniBand o Ethernet commerciale. È invece
     uno strumento hardware compatto e ispezionabile per studiare la
     microarchitettura delle primitive INC nei vincoli di una FPGA. La domanda
@@ -33,17 +36,17 @@ Output Queueing (VOQ), memoria condivisa per i pacchetti, arbitraggio egress a
 livello di pacchetto, inoltro cut-through e un motore streaming per le operazioni
 collettive.
 
-Dal punto di vista numerico, MiniSharp si concentra sulle riduzioni in virgola
+Dal punto di vista numerico, PRISM si concentra sulle riduzioni in virgola
 mobile riproducibili. Le riduzioni FP32 convenzionali dipendono dall'ordine degli
 operandi, perché l'addizione in virgola mobile non è associativa; alberi di
 riduzione o ordini di scheduling differenti possono quindi produrre risultati
-diversi a livello di bit. MiniSharp confronta un percorso di accumulazione FP32
+diversi a livello di bit. PRISM confronta un percorso di accumulazione FP32
 di riferimento con un accumulatore lungo in stile Kulisch[^kulisch], con
 l'obiettivo di misurare i compromessi di area, latenza, throughput e
 riproducibilità dell'accumulazione esatta o quasi esatta in un datapath di rete
 streaming.
 
-Dal punto di vista dello switching, MiniSharp implementa uno **scheletro di data
+Dal punto di vista dello switching, PRISM implementa uno **scheletro di data
 plane ispirato agli switch**, non uno switch di produzione completo. Include
 meccanismi comuni negli switch ad alte prestazioni, come arbitraggio per uscita,
 buffering in stile VOQ, memorizzazione condivisa dei pacchetti, propagazione
@@ -54,11 +57,11 @@ dei guasti e gestione dei buffer di livello produttivo sono intenzionalmente
 fuori dall'ambito iniziale.
 
 Il codice sorgente più recente è disponibile nel
-[repository GitHub di MiniSharp](https://github.com/uniquadev/mini-sharp).
+[repository GitHub di PRISM](https://github.com/uniquadev/prism).
 
 ## Citazione
 
-Se utilizzi MiniSharp nel tuo progetto, cita il repository e/o la tesi:
+Se utilizzi PRISM nel tuo progetto, cita il repository e/o la tesi:
 
 ```bibtex
 --8<-- "docs/assets/references.bib"

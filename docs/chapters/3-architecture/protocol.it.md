@@ -1,8 +1,8 @@
 # Protocollo
 
-MiniSharp opera al **Layer 2** del modello OSI e utilizza un protocollo
+PRISM opera al **Layer 2** del modello OSI e utilizza un protocollo
 personalizzato basato su Ethernet per identificare i pacchetti che devono essere
-elaborati dal datapath MiniSharp.
+elaborati dal datapath PRISM.
 
 Il protocollo di base supporta due semantiche collettive in stile MPI:
 
@@ -14,18 +14,18 @@ Il protocollo supporta tre modalità del data plane:
 1. **Inoltro trasparente dei pacchetti**, nel quale i frame Ethernet non locali
    possono essere inoltrati attraverso la pipeline L2 simile a quella di uno switch.
 2. **Aggregazione streaming delle collettive**, nella quale i pacchetti
-   `MS_OP_COL_DATA` aggiornano un contesto di riduzione e risalgono un albero di aggregazione.
-3. **Distribuzione dei risultati**, nella quale i pacchetti `MS_OP_COL_RES`
+   `PM_OP_COL_DATA` aggiornano un contesto di riduzione e risalgono un albero di aggregazione.
+3. **Distribuzione dei risultati**, nella quale i pacchetti `PM_OP_COL_RES`
    scendono lungo un result route tree installato dall'Aggregation Manager.
 
-MiniSharp è attualmente un datapath FPGA orientato alla ricerca, non uno switch
+PRISM è attualmente un datapath FPGA orientato alla ricerca, non uno switch
 Ethernet di produzione. Il protocollo privilegia quindi semplicità,
 ispezionabilità, fattibilità hardware e chiarezza RTL a livello di ciclo rispetto
 a gestione, sicurezza e interoperabilità complete di livello produttivo.
 
 !!! abstract "Obiettivo del protocollo"
 
-    Il protocollo MiniSharp deve rendere semplice la classificazione dei
+    Il protocollo PRISM deve rendere semplice la classificazione dei
     pacchetti nelle prime fasi della pipeline. Il primo beat deve contenere
     informazioni sufficienti affinché il parser decida se inoltrare o scartare
     il pacchetto, inviarlo al percorso di setup, consegnarlo al motore delle
@@ -35,9 +35,9 @@ a gestione, sicurezza e interoperabilità complete di livello produttivo.
 
 ## Formato comune del frame
 
-I frame MiniSharp sono trasportati all'interno di frame Ethernet. L'header
+I frame PRISM sono trasportati all'interno di frame Ethernet. L'header
 Ethernet fornisce l'indirizzamento Layer 2 del next hop, mentre l'header
-MiniSharp identifica versione del protocollo, classe del pacchetto, metadati
+PRISM identifica versione del protocollo, classe del pacchetto, metadati
 specifici dell'operazione e payload.
 
 Il diagramma completo del primo beat raggruppa intenzionalmente i campi più
@@ -58,12 +58,12 @@ packet
 |---|---:|---|
 | `Dst MAC` | 48b | MAC Ethernet di destinazione del next hop |
 | `Src MAC` | 48b | MAC Ethernet sorgente |
-| `Ethertype` | 16b | `0x88B5` per i frame sperimentali MiniSharp |
+| `Ethertype` | 16b | `0x88B5` per i frame sperimentali PRISM |
 | `MS Control` | 16b | `Version Major`, `Version Minor` e `Opcode` |
 | `Operation Header` | 64b | Header fisso specifico dell'opcode |
 | `First payload bytes` | 320b | Primo frammento di payload nel primo beat AXI-Stream a 512 bit |
 
-La control word MiniSharp è definita come segue:
+La control word PRISM è definita come segue:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 16, "bitWidth": 28, "rowHeight": 78, "showBits": true}} }%%
@@ -77,7 +77,7 @@ packet
 |---|---:|---|
 | `Version Major` | 4b | Revisione incompatibile del formato del protocollo |
 | `Version Minor` | 4b | Estensione compatibile o revisione minore |
-| `Opcode` | 8b | Classe del pacchetto MiniSharp |
+| `Opcode` | 8b | Classe del pacchetto PRISM |
 
 La versione iniziale del protocollo sperimentale è:
 
@@ -86,7 +86,7 @@ La versione iniziale del protocollo sperimentale è:
 \]
 
 Le versioni major non supportate non sono valide. Se la versione major è
-supportata ma la minor è più recente dell'implementazione locale, MiniSharp può
+supportata ma la minor è più recente dell'implementazione locale, PRISM può
 elaborare soltanto il sottoinsieme di campi definito dalla minor supportata. Le
 funzionalità di minor più recenti non sono garantite se non implementate
 esplicitamente. I campi riservati devono essere trasmessi a zero.
@@ -95,42 +95,42 @@ esplicitamente. I campi riservati devono essere trasmessi a zero.
 
 ## Proprietà e inoltro dei frame
 
-MiniSharp utilizza un EtherType personalizzato per identificare i frame della
-famiglia di protocolli MiniSharp. Nel progetto sperimentale corrente viene usato
+PRISM utilizza un EtherType personalizzato per identificare i frame della
+famiglia di protocolli PRISM. Nel progetto sperimentale corrente viene usato
 `0x88B5`. Questo valore appartiene all'intervallo degli EtherType sperimentali
 locali ed è adatto a laboratorio e ricerca, ma non è un'assegnazione di
 protocollo per la produzione.[^ethertype]
 
-La classificazione MiniSharp avviene in tre fasi:
+La classificazione PRISM avviene in tre fasi:
 
 1. Il parser Ethernet legge `Dst MAC`, `Src MAC` ed `Ethertype`.
 2. Se `Ethertype != 0x88B5`, il frame viene trattato come frame Ethernet non
-   MiniSharp e gestito dalla politica di inoltro L2 esterna.
+   PRISM e gestito dalla politica di inoltro L2 esterna.
 3. Se `Ethertype == 0x88B5`, lo switch verifica prima se `Dst MAC` corrisponde a
-   uno dei suoi MAC di terminazione MiniSharp locali. Soltanto i frame terminati
+   uno dei suoi MAC di terminazione PRISM locali. Soltanto i frame terminati
    localmente vengono decodificati dal parser degli opcode. Gli altri frame
-   MiniSharp vengono inoltrati come normali frame L2 verso il next hop.
+   PRISM vengono inoltrati come normali frame L2 verso il next hop.
 
 La distinzione è importante: `Dst MAC` seleziona il next hop o il proprietario
 locale del frame; **non** decide se il payload sia un contributo o un risultato.
-Questa decisione semantica è codificata dall'opcode MiniSharp e dal contesto
+Questa decisione semantica è codificata dall'opcode PRISM e dal contesto
 della collettiva installato dall'Aggregation Manager.
 
-MiniSharp può essere configurato con una delle due politiche di inoltro esterne:
+PRISM può essere configurato con una delle due politiche di inoltro esterne:
 
 | Politica | Comportamento |
 |---|---|
 | `MSP_TRANSPARENT` | I frame non locali vengono inoltrati attraverso il normale datapath L2. |
-| `MSP_STRICT` | I frame non locali o non MiniSharp vengono scartati o reindirizzati a un percorso di debug/controllo. |
+| `MSP_STRICT` | I frame non locali o non PRISM vengono scartati o reindirizzati a un percorso di debug/controllo. |
 
 La politica predefinita del prototipo è `MSP_TRANSPARENT`, perché durante il
-bring-up hardware MiniSharp deve comportarsi come un datapath di switching e non
+bring-up hardware PRISM deve comportarsi come un datapath di switching e non
 deve scartare inutilmente il normale traffico Ethernet.
 
 !!! note "Inoltro del setup"
 
     I pacchetti di setup in-band usano la stessa regola di proprietà.
-    L'Aggregation Manager indirizza ogni frame al MAC MiniSharp dello switch che
+    L'Aggregation Manager indirizza ogni frame al MAC PRISM dello switch che
     deve installare lo stato locale corrispondente. Gli switch intermedi possono
     inoltrare il frame; soltanto lo switch di destinazione lo consuma.
 
@@ -138,7 +138,7 @@ deve scartare inutilmente il normale traffico Ethernet.
 
 ## Identificatori delle collettive
 
-MiniSharp separa l'identità del contesto installato, l'identità di un
+PRISM separa l'identità del contesto installato, l'identità di un
 contributore locale e la posizione del chunk all'interno del vettore.
 
 | Campo | Dimensione | Significato |
@@ -151,8 +151,8 @@ contributore locale e la posizione del chunk all'interno del vettore.
 `Collective Context ID` non deve essere un communicator MPI o un identificatore
 di operazione applicativo globalmente univoco. Tuttavia, v0.1 non definisce una
 traduzione del contesto per hop. L'AM deve quindi installare lo stesso valore a
-16 bit sul wire in tutti gli switch che scambiano `MS_OP_COL_DATA` o
-`MS_OP_COL_RES` nello stesso albero di aggregazione/risultato. Alberi disgiunti
+16 bit sul wire in tutti gli switch che scambiano `PM_OP_COL_DATA` o
+`PM_OP_COL_RES` nello stesso albero di aggregazione/risultato. Alberi disgiunti
 possono riutilizzare lo stesso valore.
 
 `Contributor ID` sostituisce il precedente nome di campo `Rank`. In uno switch
@@ -167,11 +167,11 @@ individuare lo stato di riduzione del singolo chunk.
 
 ## Modello di chunking
 
-I vettori delle collettive MiniSharp sono suddivisi in **chunk**. Un chunk è
-rappresentato da un pacchetto Ethernet/MiniSharp e può occupare più beat
+I vettori delle collettive PRISM sono suddivisi in **chunk**. Un chunk è
+rappresentato da un pacchetto Ethernet/PRISM e può occupare più beat
 AXI-Stream.
 
-MiniSharp non trasporta un campo con la lunghezza del payload negli header comuni
+PRISM non trasporta un campo con la lunghezza del payload negli header comuni
 data/result. L'Aggregation Manager configura il contesto della collettiva,
 includendo dimensione del vettore, formato di input, modalità dell'accumulatore,
 formato di output, numero di contributori locali attesi, azione upstream e
@@ -184,7 +184,7 @@ Nel caso Ethernet standard non jumbo:
 \]
 
 \[
-\mathrm{MiniSharpHeaderBytes}
+\mathrm{PRISMHeaderBytes}
 =
 1_{\mathrm{version}}
 +
@@ -203,7 +203,7 @@ Nel caso Ethernet standard non jumbo:
 1490\ \mathrm{bytes}
 \]
 
-Pertanto, la dimensione predefinita del payload di un chunk MiniSharp per frame
+Pertanto, la dimensione predefinita del payload di un chunk PRISM per frame
 Ethernet standard è:
 
 \[
@@ -216,7 +216,7 @@ dipende dalla configurazione della rete e dei dispositivi.[^ethernet-frame]
 !!! note "Primo beat AXI-Stream"
 
     Nel datapath AXI-Stream a 512 bit, il primo beat contiene l'header Ethernet,
-    i campi di controllo MiniSharp, l'operation header e i primi 40 byte del
+    i campi di controllo PRISM, l'operation header e i primi 40 byte del
     payload del vettore. I beat successivi trasportano soltanto byte di payload.
     `TLAST` indica la fine del pacchetto corrente e `TKEEP` identifica i byte
     validi nel beat finale.
@@ -246,7 +246,7 @@ Per ogni chunk:
 \mathrm{ChunkIndex}\in[0,\ \mathrm{expected\_chunks}-1].
 \]
 
-L'ultimo chunk può essere più corto di `MS_CHUNK_PAYLOAD_BYTES`; i byte validi
+L'ultimo chunk può essere più corto di `PM_CHUNK_PAYLOAD_BYTES`; i byte validi
 sono determinati dalla dimensione configurata del vettore e dalla fine del
 pacchetto segnalata mediante `TLAST/TKEEP`.
 
@@ -267,31 +267,31 @@ necessario attendere gli altri chunk dello stesso vettore.
 
 ## Classi di pacchetto del data plane
 
-I pacchetti MiniSharp vengono classificati dal parser dopo il controllo di
-proprietà Ethernet. Se il frame trasporta l'EtherType MiniSharp ed è indirizzato
-al MAC MiniSharp locale, il campo `Opcode` determina come interpretare
+I pacchetti PRISM vengono classificati dal parser dopo il controllo di
+proprietà Ethernet. Se il frame trasporta l'EtherType PRISM ed è indirizzato
+al MAC PRISM locale, il campo `Opcode` determina come interpretare
 l'operation header e il payload.
 
 | Valore | Classe del pacchetto | Scopo |
 |---:|---|---|
-| `0x00` | `MS_OP_INVALID` | Decisione interna del parser per pacchetti non supportati, malformati o scartati intenzionalmente |
-| `0x01` | `MS_OP_COL_SETUP` | L'Aggregation Manager installa uno o più record di contesto |
-| `0x02` | `MS_OP_COL_DATA` | Il payload viene consumato dal motore delle collettive come contributo |
-| `0x03` | `MS_OP_COL_RES` | Il pacchetto trasporta un chunk risultato completo lungo l'albero di distribuzione |
+| `0x00` | `PM_OP_INVALID` | Decisione interna del parser per pacchetti non supportati, malformati o scartati intenzionalmente |
+| `0x01` | `PM_OP_COL_SETUP` | L'Aggregation Manager installa uno o più record di contesto |
+| `0x02` | `PM_OP_COL_DATA` | Il payload viene consumato dal motore delle collettive come contributo |
+| `0x03` | `PM_OP_COL_RES` | Il pacchetto trasporta un chunk risultato completo lungo l'albero di distribuzione |
 
-`MS_OP_INVALID` non è un normale formato trasmesso. Rappresenta l'esito di una
+`PM_OP_INVALID` non è un normale formato trasmesso. Rappresenta l'esito di una
 classificazione interna. L'opcode tutto a zero è intenzionalmente non valido,
 affinché lo stato di reset/default non codifichi accidentalmente un'operazione
-MiniSharp valida.
+PRISM valida.
 
-I valori degli opcode fanno parte dell'ABI MiniSharp v0.1 e devono essere
+I valori degli opcode fanno parte dell'ABI PRISM v0.1 e devono essere
 definiti nel package RTL, nel testbench e nel generatore di pacchetti lato host.
 
 ---
 
 ## Setup in-band
 
-Per il prototipo FPGA iniziale MiniSharp usa un **modello di setup in-band** e
+Per il prototipo FPGA iniziale PRISM usa un **modello di setup in-band** e
 chiama **Aggregation Manager** (**AM**) l'entità di controllo che installa i
 contesti delle collettive. L'AM è un singolo attore logico che conosce i
 partecipanti, la topologia fisica o logica e il posizionamento dei rank dietro
@@ -299,21 +299,21 @@ gli switch.
 
 L'AM non deve necessariamente essere implementato come un singolo host fisico.
 Nel prototipo della tesi può essere software fidato, un componente del testbench
-o un processo di controllo lato host che invia pacchetti `MS_OP_COL_SETUP` per
+o un processo di controllo lato host che invia pacchetti `PM_OP_COL_SETUP` per
 configurare ogni contesto locale allo switch.
 
 ```mermaid
 sequenceDiagram
     participant AM as Aggregation Manager
-    participant SW as Percorso di setup MiniSharp
+    participant SW as Percorso di setup PRISM
     participant CTX as Tabelle dei contesti
     participant CE as Motore delle collettive
     participant RRT as Tabella delle result route
 
-    AM->>SW: MS_OP_COL_SETUP
+    AM->>SW: PM_OP_COL_SETUP
     SW->>CTX: installa contesto e azione upstream
     SW->>RRT: installa result route e gruppi di replica
-    AM->>CE: i pacchetti MS_OP_COL_DATA arrivano in seguito
+    AM->>CE: i pacchetti PM_OP_COL_DATA arrivano in seguito
     CE->>CTX: lookup del contesto e del contributore
     CE-->>CE: accumula per Contributor ID e Chunk Index
     CE->>RRT: instrada i chunk risultato completi
@@ -328,7 +328,7 @@ registri AXI-Lite o uno stack di control plane esterno.
 
     Il setup in-band non è sicuro per la produzione di per sé. Un deployment
     reale richiederebbe filtraggio, autenticazione, autorizzazione o un canale di
-    management fidato. MiniSharp lo tratta attualmente come meccanismo di ricerca
+    management fidato. PRISM lo tratta attualmente come meccanismo di ricerca
     e prototipazione, non come protocollo di management sicuro.
 
 L'interfaccia logica dell'AM è indipendente dal trasporto fisico dei comandi di
@@ -340,7 +340,7 @@ software di control plane.
 
 ## Operation header
 
-L'header comune MiniSharp contiene un operation header fisso a 64 bit. La sua
+L'header comune PRISM contiene un operation header fisso a 64 bit. La sua
 interpretazione dipende dall'opcode.
 
 ```mermaid
@@ -349,12 +349,12 @@ flowchart LR
     TYPE -->|No| L2["Politica L2 esterna"]
     TYPE -->|Sì| OWN{"Dst MAC locale?"}
     OWN -->|No| L2
-    OWN -->|Sì| CTRL["Leggi la control word MiniSharp"]
+    OWN -->|Sì| CTRL["Leggi la control word PRISM"]
     CTRL --> OP{"Opcode"}
-    OP -->|MS_OP_COL_SETUP| SETUP["Percorso di setup"]
-    OP -->|MS_OP_COL_DATA| DATA["Motore delle collettive"]
-    OP -->|MS_OP_COL_RES| RES["Percorso delle result route"]
-    OP -->|sconosciuto| INV["MS_OP_INVALID"]
+    OP -->|PM_OP_COL_SETUP| SETUP["Percorso di setup"]
+    OP -->|PM_OP_COL_DATA| DATA["Motore delle collettive"]
+    OP -->|PM_OP_COL_RES| RES["Percorso delle result route"]
+    OP -->|sconosciuto| INV["PM_OP_INVALID"]
 ```
 
 In v0.1 i campi riservati devono essere trasmessi a zero e ignorati dai
@@ -362,9 +362,9 @@ ricevitori.
 
 ---
 
-### MS_OP_COL_SETUP
+### PM_OP_COL_SETUP
 
-`MS_OP_COL_SETUP` viene inviato dall'Aggregation Manager per installare,
+`PM_OP_COL_SETUP` viene inviato dall'Aggregation Manager per installare,
 sostituire o estendere lo stato locale delle collettive di uno switch.
 
 Il pacchetto viene consumato dal percorso di setup e non deve essere inserito
@@ -392,10 +392,10 @@ in un frame Ethernet.
 
 | Tipo di record | Scopo |
 |---:|---|
-| `MS_SETUP_CONTEXT` | Definisce semantica collettiva, formati, fan-in e lunghezza del vettore di un contesto |
-| `MS_SETUP_UPSTREAM` | Definisce come una riduzione locale completa viene emessa verso il parent di aggregazione |
-| `MS_SETUP_RESULT_ROUTE` | Mappa `(Collective Context ID, intervallo di Chunk Index)` su un gruppo di replica |
-| `MS_SETUP_REPLICATION_GROUP` | Definisce MAC dei next hop e porte egress usate per inoltrare i chunk risultato |
+| `PM_SETUP_CONTEXT` | Definisce semantica collettiva, formati, fan-in e lunghezza del vettore di un contesto |
+| `PM_SETUP_UPSTREAM` | Definisce come una riduzione locale completa viene emessa verso il parent di aggregazione |
+| `PM_SETUP_RESULT_ROUTE` | Mappa `(Collective Context ID, intervallo di Chunk Index)` su un gruppo di replica |
+| `PM_SETUP_REPLICATION_GROUP` | Definisce MAC dei next hop e porte egress usate per inoltrare i chunk risultato |
 
 Ogni record di setup è allineato a word da 64 bit e inizia con lo stesso header
 a 64 bit:
@@ -411,7 +411,7 @@ packet
 
 | Campo | Dimensione | Scopo |
 |---|---:|---|
-| `Type` | 8b | Uno dei tipi di record `MS_SETUP_*` |
+| `Type` | 8b | Uno dei tipi di record `PM_SETUP_*` |
 | `Len` | 8b | Lunghezza in word da 64 bit, incluso questo header |
 | `Context ID` | 16b | Contesto locale allo switch interessato dal record |
 | `Reserved` | 32b | Deve essere zero in v0.1 |
@@ -424,7 +424,7 @@ setup non sono validi in v0.1.
 Un record di contesto definisce il comportamento della riduzione e il fan-in per
 chunk:
 
-Dopo l'header comune, `MS_SETUP_CONTEXT` trasporta:
+Dopo l'header comune, `PM_SETUP_CONTEXT` trasporta:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
@@ -443,9 +443,9 @@ packet
 
 | Campo | Dimensione | Scopo |
 |---|---:|---|
-| `collective_semantic` | 8b | `MS_COL_REDUCE` oppure `MS_COL_ALLREDUCE` |
-| `reduction_operator` | 8b | v0.1 supporta `MS_RED_SUM` |
-| `input_format` | 8b | Formato sul wire degli elementi `MS_OP_COL_DATA` in ingresso |
+| `collective_semantic` | 8b | `PM_COL_REDUCE` oppure `PM_COL_ALLREDUCE` |
+| `reduction_operator` | 8b | v0.1 supporta `PM_RED_SUM` |
+| `input_format` | 8b | Formato sul wire degli elementi `PM_OP_COL_DATA` in ingresso |
 | `accumulator_mode` | 8b | Strategia interna di accumulazione |
 | `output_format` | 8b | Formato sul wire degli elementi risultato emessi |
 | `node_role` | 8b | `ROOT`, `INTERNAL`, `LEAF` o `SINGLE` per validazione/debug |
@@ -462,7 +462,7 @@ attende i rank locali, mentre uno spine attende i leaf figli.
 Un record di azione upstream definisce cosa accade dopo che lo switch completa
 un chunk di riduzione locale.
 
-Dopo l'header comune, `MS_SETUP_UPSTREAM` trasporta:
+Dopo l'header comune, `PM_SETUP_UPSTREAM` trasporta:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
@@ -479,19 +479,19 @@ packet
 |---|---:|---|
 | `parent_contributor_id` | 16b | Contributor ID usato dallo switch quando invia al parent |
 | `parent_egress_port` | 8b | Porta locale usata per raggiungere il parent di aggregazione |
-| `flags.has_parent` | 1b | Se impostato, i chunk completi sono emessi verso l'alto come `MS_OP_COL_DATA` |
-| `parent_dst_mac` | 48b | MAC MiniSharp del nodo parent di aggregazione |
+| `flags.has_parent` | 1b | Se impostato, i chunk completi sono emessi verso l'alto come `PM_OP_COL_DATA` |
+| `parent_dst_mac` | 48b | MAC PRISM del nodo parent di aggregazione |
 | `Reserved` | 48b totali | Devono essere zero in v0.1 |
 
-Se `has_parent == 1`, un chunk completo viene emesso come `MS_OP_COL_DATA`. Se
+Se `has_parent == 1`, un chunk completo viene emesso come `PM_OP_COL_DATA`. Se
 `has_parent == 0`, lo switch è la root di aggregazione del contesto e il chunk
-entra nel percorso delle result route come `MS_OP_COL_RES`.
+entra nel percorso delle result route come `PM_OP_COL_RES`.
 
 #### Record delle result route
 
 Un record di result route definisce dove inviare i chunk risultato completi:
 
-Dopo l'header comune, `MS_SETUP_RESULT_ROUTE` trasporta una word a 64 bit:
+Dopo l'header comune, `PM_SETUP_RESULT_ROUTE` trasporta una word a 64 bit:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
@@ -521,7 +521,7 @@ instradati verso rami di destinazione diversi.
 
 Un record di gruppo di replica definisce uno o più next hop locali:
 
-Dopo l'header comune, `MS_SETUP_REPLICATION_GROUP` inizia con un header di
+Dopo l'header comune, `PM_SETUP_REPLICATION_GROUP` inizia con un header di
 gruppo a 64 bit:
 
 ```mermaid
@@ -548,7 +548,7 @@ packet
 | `entries` | 8b | Numero di record di next hop nel gruppo |
 | `egress_port` | 8b | Porta di uscita locale per una replica |
 | `next_hop_type` | 8b | `SWITCH` o `RANK`, usato per validazione/debug |
-| `dst_mac` | 48b | MAC MiniSharp o del rank next hop |
+| `dst_mac` | 48b | MAC PRISM o del rank next hop |
 | `Reserved` | 40b | Deve essere zero in v0.1 |
 
 Il comportamento di inoltro dipende da `egress_port` e `dst_mac`;
@@ -571,14 +571,14 @@ Un pacchetto o record di setup non è valido se:
 - una result route punta a un gruppo di replica sconosciuto;
 - i campi riservati sono diversi da zero.
 
-Nel prototipo corrente MiniSharp assume che le scritture di setup abbiano
+Nel prototipo corrente PRISM assume che le scritture di setup abbiano
 successo. Non definisce acknowledgement, risposte di setup o pacchetti di stato.
 
 ---
 
-### MS_OP_COL_DATA
+### PM_OP_COL_DATA
 
-`MS_OP_COL_DATA` trasporta i dati di un contributore per un chunk del vettore.
+`PM_OP_COL_DATA` trasporta i dati di un contributore per un chunk del vettore.
 Il pacchetto viene consumato dal motore delle collettive e non viene inoltrato
 direttamente attraverso il normale datapath VOQ.
 
@@ -603,19 +603,19 @@ Per ogni chunk, il motore delle collettive attende di aver ricevuto
 completo, il contesto decide l'azione successiva:
 
 - se è configurato un parent upstream, lo switch emette un nuovo pacchetto
-  `MS_OP_COL_DATA` verso il parent. Il pacchetto usa `parent_contributor_id`,
+  `PM_OP_COL_DATA` verso il parent. Il pacchetto usa `parent_contributor_id`,
   perché il parent vede l'intero sottoalbero figlio come un contributore locale;
 - se non è configurato un parent upstream, lo switch è la root di aggregazione
-  ed emette `MS_OP_COL_RES` secondo la tabella delle result route.
+  ed emette `PM_OP_COL_RES` secondo la tabella delle result route.
 
-La regola elimina l'ambiguità: `MS_OP_COL_DATA` appartiene sempre alla fase di
+La regola elimina l'ambiguità: `PM_OP_COL_DATA` appartiene sempre alla fase di
 aggregazione verso l'alto.
 
 ---
 
-### MS_OP_COL_RES
+### PM_OP_COL_RES
 
-`MS_OP_COL_RES` trasporta un chunk risultato completo lungo l'albero di
+`PM_OP_COL_RES` trasporta un chunk risultato completo lungo l'albero di
 distribuzione. Viene generato dalla root di aggregazione e può essere inoltrato
 da switch intermedi fino a raggiungere il rank o i rank di destinazione.
 
@@ -635,29 +635,29 @@ packet
 | `Chunk Index` | 24b | Indice del chunk risultato |
 | `Flags` | 8b | Devono essere zero in v0.1 |
 
-Quando uno switch riceve un `MS_OP_COL_RES` locale, esegue un lookup delle result
+Quando uno switch riceve un `PM_OP_COL_RES` locale, esegue un lookup delle result
 route usando `(Context ID, Chunk Index)`. La route corrispondente seleziona un
 gruppo di replica. Lo switch emette quindi una replica per ogni entry, impostando
 il `Dst MAC` Ethernet di ciascuna al next hop configurato.
 
-`MS_OP_COL_RES` non viene mai accumulato nuovamente. Appartiene sempre alla fase
+`PM_OP_COL_RES` non viene mai accumulato nuovamente. Appartiene sempre alla fase
 di distribuzione del risultato verso il basso.
 
 Il formato del payload risultato è determinato dal contesto configurato da
-`MS_OP_COL_SETUP`. Il formato di output può differire sia da quello di input sia
+`PM_OP_COL_SETUP`. Il formato di output può differire sia da quello di input sia
 dalla modalità interna dell'accumulatore.
 
 Esempio:
 
 ```text
-input_format     = MS_FMT_FP32
-accumulator_mode = MS_ACC_EXACT_FP32_MAG277
-output_format    = MS_FMT_FP32
+input_format     = PM_FMT_FP32
+accumulator_mode = PM_ACC_EXACT_FP32_MAG277
+output_format    = PM_FMT_FP32
 ```
 
-Gli elementi in ingresso vengono quindi ricevuti come `MS_FMT_FP32`, accumulati
+Gli elementi in ingresso vengono quindi ricevuti come `PM_FMT_FP32`, accumulati
 internamente con una famiglia di accumulatori esatti per somme scalari FP32 ed
-emessi come `MS_FMT_FP32`.
+emessi come `PM_FMT_FP32`.
 
 ---
 
@@ -667,11 +667,11 @@ La semantica collettiva descrive il comportamento a livello di comunicazione.
 
 | Valore | Semantica | Significato |
 |---:|---|---|
-| `0x00` | `MS_COL_INVALID` | Semantica non valida o non supportata |
-| `0x01` | `MS_COL_REDUCE` | I contributori producono un risultato consegnato a un rank root |
-| `0x02` | `MS_COL_ALLREDUCE` | I contributori producono un risultato consegnato a tutti i rank partecipanti |
+| `0x00` | `PM_COL_INVALID` | Semantica non valida o non supportata |
+| `0x01` | `PM_COL_REDUCE` | I contributori producono un risultato consegnato a un rank root |
+| `0x02` | `PM_COL_ALLREDUCE` | I contributori producono un risultato consegnato a tutti i rank partecipanti |
 
-`REDUCE` e `ALLREDUCE` rientrano nell'ambito del primo protocollo MiniSharp della
+`REDUCE` e `ALLREDUCE` rientrano nell'ambito del primo protocollo PRISM della
 tesi. Le altre semantiche, come `REDUCE_SCATTER`, sono sviluppi futuri.
 
 `REDUCE_SCATTER` non è intenzionalmente codificata come caso speciale nel
@@ -687,40 +687,40 @@ L'operatore di riduzione descrive l'operazione matematica applicata agli element
 
 | Valore | Operatore | Significato |
 |---:|---|---|
-| `0x00` | `MS_RED_INVALID` | Operatore non valido o non supportato |
-| `0x01` | `MS_RED_SUM` | Addizione |
+| `0x00` | `PM_RED_INVALID` | Operatore non valido o non supportato |
+| `0x01` | `PM_RED_SUM` | Addizione |
 
-Soltanto `MS_RED_SUM` rientra nell'ambito del primo prototipo della tesi.
+Soltanto `PM_RED_SUM` rientra nell'ambito del primo prototipo della tesi.
 
 ---
 
 ## Formati sul wire e modalità dell'accumulatore
 
-MiniSharp distingue i **formati sul wire** dalle **modalità dell'accumulatore**.
+PRISM distingue i **formati sul wire** dalle **modalità dell'accumulatore**.
 
 Un formato sul wire descrive come gli elementi sono codificati nei payload
-`MS_OP_COL_DATA` e `MS_OP_COL_RES`.
+`PM_OP_COL_DATA` e `PM_OP_COL_RES`.
 
 | Valore | Formato sul wire | Significato |
 |---:|---|---|
-| `0x00` | `MS_FMT_INVALID` | Formato non valido o non supportato |
-| `0x01` | `MS_FMT_INT8` | Elementi interi a 8 bit |
-| `0x02` | `MS_FMT_FP16` | Elementi IEEE binary16 |
-| `0x03` | `MS_FMT_BF16` | Elementi bfloat16 |
-| `0x04` | `MS_FMT_FP32` | Elementi IEEE binary32 |
+| `0x00` | `PM_FMT_INVALID` | Formato non valido o non supportato |
+| `0x01` | `PM_FMT_INT8` | Elementi interi a 8 bit |
+| `0x02` | `PM_FMT_FP16` | Elementi IEEE binary16 |
+| `0x03` | `PM_FMT_BF16` | Elementi bfloat16 |
+| `0x04` | `PM_FMT_FP32` | Elementi IEEE binary32 |
 
 Una modalità dell'accumulatore descrive come il motore delle collettive combina
 internamente i contributi.
 
 | Valore | Modalità dell'accumulatore | Significato |
 |---:|---|---|
-| `0x00` | `MS_ACC_INVALID` | Modalità non valida o non supportata |
-| `0x01` | `MS_ACC_NATIVE` | Accumula con l'aritmetica nativa associata al formato di input |
-| `0x02` | `MS_ACC_FP32` | Accumula con aritmetica FP32 |
-| `0x03` | `MS_ACC_DETERMINISTIC_FP32` | Attende i contributi e riduce in ordine logico deterministico |
-| `0x04` | `MS_ACC_EXACT_FP16_MAG40` | Famiglia di accumulatori esatti per somme scalari FP16 |
-| `0x05` | `MS_ACC_EXACT_BF16_MAG261` | Famiglia di accumulatori esatti per somme scalari BF16 |
-| `0x06` | `MS_ACC_EXACT_FP32_MAG277` | Famiglia di accumulatori esatti per somme scalari FP32 |
+| `0x00` | `PM_ACC_INVALID` | Modalità non valida o non supportata |
+| `0x01` | `PM_ACC_NATIVE` | Accumula con l'aritmetica nativa associata al formato di input |
+| `0x02` | `PM_ACC_FP32` | Accumula con aritmetica FP32 |
+| `0x03` | `PM_ACC_DETERMINISTIC_FP32` | Attende i contributi e riduce in ordine logico deterministico |
+| `0x04` | `PM_ACC_EXACT_FP16_MAG40` | Famiglia di accumulatori esatti per somme scalari FP16 |
+| `0x05` | `PM_ACC_EXACT_BF16_MAG261` | Famiglia di accumulatori esatti per somme scalari BF16 |
+| `0x06` | `PM_ACC_EXACT_FP32_MAG277` | Famiglia di accumulatori esatti per somme scalari FP32 |
 
 !!! note "Perché `MAG40`, `MAG261` e `MAG277`?"
 
@@ -750,7 +750,7 @@ Per la derivazione dettagliata, vedi
 !!! note "Ruoli di input, accumulatore e output"
 
     `input_format`, `accumulator_mode` e `output_format` sono intenzionalmente
-    separati. MiniSharp può ricevere dati in una rappresentazione, accumularli
+    separati. PRISM può ricevere dati in una rappresentazione, accumularli
     con una strategia interna riproducibile ed emettere risultati nel formato
     scelto dall'Aggregation Manager.
 
@@ -770,7 +770,7 @@ La topologia contiene uno spine, due leaf e quattro rank partecipanti:
 - `S0` è la root di aggregazione;
 - `rank1` è l'unica destinazione del risultato.
 
-Per il chunk `i`, MiniSharp calcola la riduzione elemento per elemento
+Per il chunk `i`, PRISM calcola la riduzione elemento per elemento
 
 \[
 \mathbf{result}[i] =
@@ -784,10 +784,10 @@ sono attivi nella fase illustrata.
 ### 1. Installazione del contesto della collettiva
 
 L'AM conosce topologia, posizionamento dei partecipanti e rank root. Invia a
-ogni switch un frame `MS_OP_COL_SETUP` indirizzato individualmente. Il MAC
+ogni switch un frame `PM_OP_COL_SETUP` indirizzato individualmente. Il MAC
 Ethernet di destinazione identifica lo switch che consuma il frame di setup; gli
 switch intermedi si limitano a inoltrare i frame destinati a un altro nodo
-MiniSharp.
+PRISM.
 
 In v0.1, l'AM installa lo stesso `Context ID` sul wire, indicato con `C`, lungo
 tutto l'albero perché non è definita una traduzione per hop. Lo stato locale
@@ -795,9 +795,9 @@ rilevante è:
 
 | Nodo | Contributori locali attesi | Azione upstream dopo il completamento locale | Result route per il chunk `i` |
 |---|---|---|---|
-| `L0` | `rank0`, `rank1` | Emette un `MS_OP_COL_DATA` verso `S0` come parent contributor configurato | Gruppo di replica `{rank1}` |
-| `L1` | `rank2`, `rank3` | Emette un `MS_OP_COL_DATA` verso `S0` come parent contributor configurato | Nessuna result route |
-| `S0` | `L0`, `L1` | Nessun parent; inietta il chunk completo come `MS_OP_COL_RES` | Gruppo di replica `{L0}` |
+| `L0` | `rank0`, `rank1` | Emette un `PM_OP_COL_DATA` verso `S0` come parent contributor configurato | Gruppo di replica `{rank1}` |
+| `L1` | `rank2`, `rank3` | Emette un `PM_OP_COL_DATA` verso `S0` come parent contributor configurato | Nessuna result route |
+| `S0` | `L0`, `L1` | Nessun parent; inietta il chunk completo come `PM_OP_COL_RES` | Gruppo di replica `{L0}` |
 
 Ogni entry del gruppo di replica contiene una porta egress locale e il MAC di
 destinazione del next hop. Uno switch necessita quindi soltanto della decisione
@@ -810,7 +810,7 @@ locale e non scopre la topologia globale a runtime.
 
 ### 2. Invio dei contributi dei rank
 
-Per il chunk `i`, ogni rank invia un pacchetto `MS_OP_COL_DATA` al leaf locale.
+Per il chunk `i`, ogni rank invia un pacchetto `PM_OP_COL_DATA` al leaf locale.
 L'operation header trasporta il `Contributor ID` locale al leaf,
 `Context ID = C` e `Chunk Index = i`; il MAC Ethernet di destinazione seleziona
 il leaf ricevente.
@@ -848,7 +848,7 @@ proprio risultato parziale non appena soddisfa la condizione
 
 ### 4. Aggregazione nello switch root
 
-L'azione upstream di ciascun leaf crea un nuovo pacchetto `MS_OP_COL_DATA`
+L'azione upstream di ciascun leaf crea un nuovo pacchetto `PM_OP_COL_DATA`
 indirizzato a `S0`. Il suo `Contributor ID` è il `parent_contributor_id`
 configurato, quindi `S0` vede ogni intero sottoalbero leaf come un contributore,
 non i rank originali.
@@ -861,8 +861,8 @@ Dopo aver ricevuto i parziali da `L0` e `L1`, `S0` calcola
 
 L'opcode selezionato dopo il completamento deriva dall'azione upstream
 installata, non dal MAC di destinazione: un nodo con `has_parent == 1` emette
-`MS_OP_COL_DATA`; la root di aggregazione ha `has_parent == 0` e inietta
-`MS_OP_COL_RES` nel percorso delle result route.
+`PM_OP_COL_DATA`; la root di aggregazione ha `has_parent == 0` e inietta
+`PM_OP_COL_RES` nel percorso delle result route.
 
 <figure markdown="span">
   ![L0 e L1 inviano un parziale COL_DATA ciascuno a S0, che completa la somma finale.](../../assets/images/protocol/reduce-lifecycle/04-root-reduction.png){ loading=lazy }
@@ -873,7 +873,7 @@ installata, non dal MAC di destinazione: un nodo con `has_parent == 1` emette
 
 `S0` cerca `(C, i)` nella tabella delle result route. Il gruppo di replica
 corrispondente contiene soltanto `L0`, quindi `S0` emette una replica
-`MS_OP_COL_RES` sulla porta egress di `L0` e imposta il MAC Ethernet di
+`PM_OP_COL_RES` sulla porta egress di `L0` e imposta il MAC Ethernet di
 destinazione al MAC configurato di `L0`.
 
 `L0` consuma il frame indirizzato localmente ed esegue lo stesso lookup. Il suo
@@ -901,8 +901,8 @@ dedurre se una porta raggiunga un leaf o un rank e non è necessario flooding.
 più necessario dopo che uno switch ha consegnato correttamente il proprio output:
 
 - `L0` e `L1` rilasciano lo stato dopo aver emesso verso l'alto i pacchetti
-  `MS_OP_COL_DATA`;
-- `S0` rilascia lo stato dopo aver iniettato `MS_OP_COL_RES` nel percorso del risultato;
+  `PM_OP_COL_DATA`;
+- `S0` rilascia lo stato dopo aver iniettato `PM_OP_COL_RES` nel percorso del risultato;
 - contesto, azioni upstream, result route e gruppi di replica configurati
   rimangono installati per gli altri chunk della collettiva.
 
@@ -917,10 +917,10 @@ persistente delle route, non dal mantenimento di un accumulatore completato.
 
 !!! note "Perdita di pacchetti in v0.1"
 
-    Questo è il ciclo di vita nominale con esito positivo. MiniSharp v0.1 non
+    Questo è il ciclo di vita nominale con esito positivo. PRISM v0.1 non
     fornisce acknowledgement, ritrasmissione, timeout o pacchetti di abort. La
-    perdita di `MS_OP_COL_DATA` lascia incompleto il chunk di destinazione; la
-    perdita di `MS_OP_COL_RES` lascia il rank root senza risultato. Le
+    perdita di `PM_OP_COL_DATA` lascia incompleto il chunk di destinazione; la
+    perdita di `PM_OP_COL_RES` lascia il rank root senza risultato. Le
     implementazioni possono esporre occupazione dei contesti e contatori di
     drop/errore, mentre completamento affidabile e recovery restano sviluppi futuri.
 
@@ -939,8 +939,8 @@ Il contesto e le tabelle di route configurati sono stato persistente del control
 plane. Lo stato dell'accumulatore per chunk è stato temporaneo del data plane.
 
 Uno switch può rilasciare lo stato locale dell'accumulatore dopo aver emesso con
-successo il chunk completo verso l'alto come `MS_OP_COL_DATA` o averlo iniettato
-nel percorso delle result route come `MS_OP_COL_RES`. Un leaf che partecipa a
+successo il chunk completo verso l'alto come `PM_OP_COL_DATA` o averlo iniettato
+nel percorso delle result route come `PM_OP_COL_RES`. Un leaf che partecipa a
 `ALLREDUCE` non deve mantenere lo stato mentre attende il ritorno del risultato:
 l'inoltro usa le tabelle persistenti.
 
@@ -950,7 +950,7 @@ identificatori di contesto non installati, contributi duplicati per lo stesso
 `(Collective Context ID, Contributor ID, Chunk Index)` o payload incoerenti con
 il contesto configurato.
 
-MiniSharp v0.1 non genera pacchetti di errore. I pacchetti non validi vengono
+PRISM v0.1 non genera pacchetti di errore. I pacchetti non validi vengono
 scartati o ignorati e l'implementazione può incrementare contatori visibili in
 simulazione, debug o tramite registri. Protocolli di completamento affidabile,
 ritrasmissione, messaggi espliciti di abort e gestione dei guasti di produzione
@@ -964,9 +964,9 @@ sono fuori dall'ambito del primo protocollo della tesi.
 [^ethernet-frame]: Il payload Ethernet standard è di 1500 byte per frame non
     jumbo. L'header Ethernet è di 14 byte e l'FCS di 4; preambolo, SFD e
     interpacket gap sono overhead del livello fisico e normalmente non fanno
-    parte del payload AXI-Stream visto da MiniSharp.
+    parte del payload AXI-Stream visto da PRISM.
 
 [^superaccumulator-sizing]: La regola di dimensionamento segue il modello di
-    riduzione scalare MiniSharp. È intenzionalmente diversa dal bound più ampio
-    del prodotto scalare di Kulisch, perché le riduzioni MiniSharp sommano valori
+    riduzione scalare PRISM. È intenzionalmente diversa dal bound più ampio
+    del prodotto scalare di Kulisch, perché le riduzioni PRISM sommano valori
     numerici già calcolati, non prodotti.

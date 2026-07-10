@@ -1,11 +1,11 @@
 # 5.1 Protocollo
 
 I punti seguenti sono intenzionalmente fuori dall'ambito della prima versione
-del protocollo MiniSharp sviluppata per la tesi.
+del protocollo PRISM sviluppata per la tesi.
 
 ## Completamento affidabile e interruzione
 
-MiniSharp v0.1 non definisce `COL_ABORT`, acknowledgement positivi o negativi,
+PRISM v0.1 non definisce `COL_ABORT`, acknowledgement positivi o negativi,
 ritrasmissione oppure pacchetti di recovery attivati da timeout. Pacchetti non
 validi, contributi duplicati, route mancanti, opcode non supportati e altre
 condizioni di errore vengono segnalati mediante contatori visibili in debug o

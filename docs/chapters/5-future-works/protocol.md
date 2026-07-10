@@ -1,11 +1,11 @@
 # 5.1 Protocol
 
-The following points are intentionally outside the first MiniSharp thesis
+The following points are intentionally outside the first PRISM thesis
 protocol.
 
 ## Reliable completion and aborts
 
-MiniSharp v0.1 does not define `COL_ABORT`, acknowledgments, negative
+PRISM v0.1 does not define `COL_ABORT`, acknowledgments, negative
 acknowledgments, retransmission, or timeout-driven recovery packets. Malformed
 packets, duplicate contributions, missing routes, unsupported opcodes, and other
 invalid conditions are reported through debug-visible or register-visible

@@ -34,7 +34,7 @@
       block.setAttribute("data-mermaid-rendered", "true");
 
       try {
-        const id = `mini-sharp-mermaid-${Date.now()}-${index}`;
+        const id = `prism-mermaid-${Date.now()}-${index}`;
         const result = await window.mermaid.render(id, source);
         const container = document.createElement("div");
         container.className = "mermaid-rendered mermaid-zoomable";
@@ -120,8 +120,8 @@
   }
 
   function getMermaidViewer() {
-    if (window.__miniSharpMermaidViewer) {
-      return window.__miniSharpMermaidViewer;
+    if (window.__prismMermaidViewer) {
+      return window.__prismMermaidViewer;
     }
 
     const element = document.createElement("div");
@@ -401,7 +401,7 @@
     });
     buttons.reset.addEventListener("click", reset);
 
-    window.__miniSharpMermaidViewer = {
+    window.__prismMermaidViewer = {
       canvas,
       element,
       open: function (box) {
@@ -417,7 +417,7 @@
       }
     };
 
-    return window.__miniSharpMermaidViewer;
+    return window.__prismMermaidViewer;
   }
 
   function viewerButton(action, label, path) {

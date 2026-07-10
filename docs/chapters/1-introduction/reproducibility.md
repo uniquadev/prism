@@ -2,9 +2,9 @@
 
 Floating-point reproducibility is a correctness property of the collective offload, not only a numerical-analysis detail. In an in-network collective, the effective reduction order can be affected by packet arrival time, VOQ arbitration, backpressure, egress scheduling, tree shape, and rank-to-port placement. This is a problem for IEEE-style floating-point addition: floating-point addition is rounded after each operation and is therefore not associative.
 
-MiniSharp studies this problem at the packet-processing boundary. The goal is not to make a whole distributed application deterministic by itself. Local computation, tensor partitioning, compiler choices, GPU kernels, and host-side reduction fragments may still introduce nondeterminism before packets reach the switch. The narrower question is:
+PRISM studies this problem at the packet-processing boundary. The goal is not to make a whole distributed application deterministic by itself. Local computation, tensor partitioning, compiler choices, GPU kernels, and host-side reduction fragments may still introduce nondeterminism before packets reach the switch. The narrower question is:
 
-!!! question "MiniSharp reproducibility question"
+!!! question "PRISM reproducibility question"
 
     Given the same logical reduction epoch, the same rank contributions, the same datatype, and the same exception policy, can a switch-like RTL datapath produce the same final floating-point bit pattern independently of packet timing and arbitration order?
 
@@ -12,7 +12,7 @@ This matters for debugging, regression testing, numerical validation, checkpoint
 
 ## Candidate strategies
 
-MiniSharp exposes reproducibility as a design space rather than as a single hard-coded arithmetic choice.
+PRISM exposes reproducibility as a design space rather than as a single hard-coded arithmetic choice.
 
 | Strategy | Datapath idea | Reproducibility guarantee | Main cost |
 |---|---|---|---|
@@ -50,13 +50,13 @@ Second, distributed AI and HPC workloads increasingly operate at scales where co
 
 Third, modern accelerators already rely on mixed precision. NVIDIA H100-style FP8[^nvidia-fp8] uses distinct E4M3 and E5M2 formats, typically choosing E4M3 for precision-sensitive forward values and E5M2 for higher-dynamic-range gradients. This makes accumulation semantics more important, not less: low-precision payloads are often acceptable only because accumulation is performed in a wider or more stable format.
 
-Fourth, conventional programmable-switch datapaths were designed primarily for packet processing, not for application-level floating-point arithmetic. Work on FPISA[^fpisa] explicitly identifies floating-point data in distributed training and query processing as a case where existing switch hardware needs expensive workarounds or architectural support. MiniSharp is therefore positioned as an RTL research vehicle: instead of emulating floating point inside a restricted P4/RMT pipeline, it studies what a purpose-built FPGA datapath would cost.
+Fourth, conventional programmable-switch datapaths were designed primarily for packet processing, not for application-level floating-point arithmetic. Work on FPISA[^fpisa] explicitly identifies floating-point data in distributed training and query processing as a case where existing switch hardware needs expensive workarounds or architectural support. PRISM is therefore positioned as an RTL research vehicle: instead of emulating floating point inside a restricted P4/RMT pipeline, it studies what a purpose-built FPGA datapath would cost.
 
 Finally, exact or reproducible accumulation maps naturally to hardware research questions: accumulator width, carry-save versus carry-propagate organization, banked accumulator files, BRAM/URAM pressure, initiation interval, Fmax, backpressure behavior, and final rounding latency. These are precisely the trade-offs that a compact RTL prototype can expose.
 
 !!! note "Design intent"
 
-    MiniSharp does not assume that a superaccumulator is always the best engineering choice. The point is to measure the Pareto frontier between a cheap deterministic FP32 path and a wider exact-accumulation path under switch-like constraints: line-rate packet ingress, bounded on-chip state, epoch tracking, and packet-level scheduling.
+    PRISM does not assume that a superaccumulator is always the best engineering choice. The point is to measure the Pareto frontier between a cheap deterministic FP32 path and a wider exact-accumulation path under switch-like constraints: line-rate packet ingress, bounded on-chip state, epoch tracking, and packet-level scheduling.
 
 ## Superaccumulator semantics
 
@@ -84,7 +84,7 @@ Special values must be handled outside the fixed-point datapath. NaNs, infinitie
 
 ## Accumulator sizing for scalar reductions { #accumulator-sizing-for-scalar-reductions }
 
-The accumulator width depends on the operation. For MiniSharp scalar reductions,
+The accumulator width depends on the operation. For PRISM scalar reductions,
 
 \[
 \sum_{i=1}^{R} x_i,
@@ -171,7 +171,7 @@ A deterministic FP32 reducer still rounds after every addition. It can make the 
 
 Preserving order can also fight the purpose of in-network computing. If reproducibility is achieved by gathering operands to a root, serializing the reduction, or forwarding intermediate FP32 accumulators across endpoints, the design may reintroduce communication and synchronization overhead that INC was meant to avoid. A local superaccumulator is attractive because it keeps the reproducibility cost inside the aggregation node rather than increasing the payload format on the wire.
 
-MiniSharp therefore compares both paths:
+PRISM therefore compares both paths:
 
 1. **Deterministic FP32 mode**, useful as a lower-area baseline and for studying scheduling determinism.
 2. **Superaccumulator mode**, useful for studying order-independent finite summation and the hardware cost of exact accumulation.
@@ -186,7 +186,7 @@ The expected contribution is not the claim that superaccumulators are universall
 \text{area} + \text{state} + \text{latency} + \text{timing pressure}.
 \]
 
-For MiniSharp, this is the central research point: if a switch-like datapath already contains parser state, VOQs, shared packet memory, arbitration, backpressure, and aggregation slots, then the open question is whether exact or near-exact floating-point accumulation can be integrated without destroying line-rate behavior.
+For PRISM, this is the central research point: if a switch-like datapath already contains parser state, VOQs, shared packet memory, arbitration, backpressure, and aggregation slots, then the open question is whether exact or near-exact floating-point accumulation can be integrated without destroying line-rate behavior.
 
 [^sharp-overview]: NVIDIA, *Scalable Hierarchical Aggregation and Reduction Protocol (SHARP)* documentation. SHARP is described as offloading MPI and machine-learning collective operations from CPUs and GPUs to the network. https://docs.nvidia.com/networking/display/sharpv300
 

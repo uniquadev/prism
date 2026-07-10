@@ -1,7 +1,7 @@
-site_name: Mini-Sharp
+site_name: PRISM
 site_description: Bachelor thesis documentation for primitive hardware for network computing.
 site_author: Lorenzo Cipolletti
-site_url: https://minisharp.uniqua.dev/
+site_url: https://prism.uniqua.dev/
 copyright: Copyright &copy; 2026 Sapienza University of Rome
 
 docs_dir: docs
@@ -93,8 +93,8 @@ plugins:
             generator: false
             social:
               - icon: fontawesome/brands/github
-                link: https://github.com/uniquadev/mini-sharp
-                name: Mini-Sharp su GitHub
+                link: https://github.com/uniquadev/prism
+                name: PRISM su GitHub
           nav_translations:
             "1. Introduction": "1. Introduzione"
             "1.1 Floating-Point Reproducibility": "1.1 Riproducibilità in virgola mobile"
@@ -185,8 +185,8 @@ extra:
   generator: false
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/uniquadev/mini-sharp
-      name: Mini-Sharp on GitHub
+      link: https://github.com/uniquadev/prism
+      name: PRISM on GitHub
 
 extra_css:
   - assets/stylesheets/extra.css

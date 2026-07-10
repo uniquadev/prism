@@ -1,8 +1,8 @@
 # 5. Sviluppi futuri
 
-MiniSharp è un progetto di ricerca ampio e molti aspetti rimangono
+PRISM è un progetto di ricerca ampio e molti aspetti rimangono
 intenzionalmente semplificati o inesplorati. Le sezioni seguenti presentano
-alcune delle direzioni di sviluppo futuro più importanti per MiniSharp.
+alcune delle direzioni di sviluppo futuro più importanti per PRISM.
 
 <div class="grid cards" markdown>
 

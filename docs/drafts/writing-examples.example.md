@@ -30,7 +30,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
   participant TB as Testbench
-  participant DUT as Mini-Sharp RTL
+  participant DUT as PRISM RTL
   participant Ref as Reference model
   TB->>DUT: Packet trace
   TB->>Ref: Same trace
@@ -101,15 +101,15 @@ end
 
     ```systemverilog
     typedef enum logic [1:0] {
-      MS_IDLE,
-      MS_PARSE,
-      MS_REDUCE,
-      MS_EMIT
-    } ms_state_t;
+      PM_IDLE,
+      PM_PARSE,
+      PM_REDUCE,
+      PM_EMIT
+    } pm_state_t;
 
     always_ff @(posedge clk) begin
       if (rst) begin
-        state_q <= MS_IDLE;
+        state_q <= PM_IDLE;
       end else begin
         state_q <= state_d;
       end
@@ -170,7 +170,7 @@ See [RTL](../6-glossary/index.example.md#rtl) and
 
 ## Footnotes
 
-Mini-Sharp is written as an RTL-first thesis artifact.[^rtl]
+PRISM is written as an RTL-first thesis artifact.[^rtl]
 
 [^rtl]: Keep footnotes short. If the note becomes a paragraph, it probably
     belongs in the main text or in the bibliography workflow.

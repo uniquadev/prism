@@ -1,4 +1,4 @@
-# Mini-Sharp
+# PRISM
 
 This repository contains the source code, documentation, and experiments developed
 for a bachelor thesis at Sapienza University of Rome.

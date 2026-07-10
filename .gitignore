@@ -10,7 +10,7 @@ site/
 .tmp-*
 
 # Verilator / build artifacts
-/tmp/mini-sharp-rtl/
+/tmp/prism-rtl/
 build/
 dump.vcd
 dump.fst

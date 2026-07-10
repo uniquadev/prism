@@ -9,14 +9,14 @@ posizionamento dei rank sulle porte. Questo è un problema per l'addizione in
 virgola mobile in stile IEEE: ogni operazione viene arrotondata e l'addizione non
 è quindi associativa.
 
-MiniSharp studia il problema al confine con l'elaborazione dei pacchetti.
+PRISM studia il problema al confine con l'elaborazione dei pacchetti.
 L'obiettivo non è rendere deterministica, da solo, un'intera applicazione
 distribuita. Computazione locale, partizionamento dei tensori, scelte del
 compilatore, kernel GPU e frammenti di riduzione lato host possono ancora
 introdurre non determinismo prima che i pacchetti raggiungano lo switch. La
 domanda più circoscritta è:
 
-!!! question "Domanda sulla riproducibilità di MiniSharp"
+!!! question "Domanda sulla riproducibilità di PRISM"
 
     Dati la stessa epoca logica di riduzione, gli stessi contributi dei rank, lo
     stesso tipo di dato e la stessa politica per le eccezioni, può un datapath
@@ -33,7 +33,7 @@ leaf o percorsi di aggregazione differenti.
 
 ## Strategie candidate
 
-MiniSharp tratta la riproducibilità come uno spazio di progetto, non come
+PRISM tratta la riproducibilità come uno spazio di progetto, non come
 un'unica scelta aritmetica codificata rigidamente.
 
 | Strategia | Idea per il datapath | Garanzia di riproducibilità | Costo principale |
@@ -97,7 +97,7 @@ progettati principalmente per elaborare pacchetti, non per eseguire aritmetica
 in virgola mobile a livello applicativo. Il lavoro su FPISA[^fpisa] identifica
 esplicitamente i dati floating-point nell'addestramento distribuito e nel query
 processing come casi nei quali l'hardware di switching esistente richiede
-workaround costosi o supporto architetturale. MiniSharp si colloca quindi come
+workaround costosi o supporto architetturale. PRISM si colloca quindi come
 strumento di ricerca RTL: invece di emulare la virgola mobile in una pipeline
 P4/RMT vincolata, studia il costo di un datapath FPGA dedicato.
 
@@ -110,7 +110,7 @@ prototipo RTL compatto può mettere in evidenza.
 
 !!! note "Obiettivo progettuale"
 
-    MiniSharp non assume che un superaccumulatore sia sempre la scelta
+    PRISM non assume che un superaccumulatore sia sempre la scelta
     ingegneristica migliore. L'obiettivo è misurare la frontiera di Pareto tra un
     percorso FP32 deterministico economico e un percorso di accumulazione esatta
     più ampio, rispettando vincoli simili a quelli di uno switch: ingresso dei
@@ -156,7 +156,7 @@ soltanto depositi numerici finiti.
 ## Dimensionamento dell'accumulatore per riduzioni scalari { #accumulator-sizing-for-scalar-reductions }
 
 La larghezza dell'accumulatore dipende dall'operazione. Per le riduzioni scalari
-di MiniSharp,
+di PRISM,
 
 \[
 \sum_{i=1}^{R} x_i,
@@ -265,7 +265,7 @@ sincronizzazione che INC intende evitare. Un superaccumulatore locale è
 interessante perché mantiene il costo della riproducibilità nel nodo di
 aggregazione senza ampliare il formato del payload sul wire.
 
-MiniSharp confronta quindi entrambi i percorsi:
+PRISM confronta quindi entrambi i percorsi:
 
 1. **Modalità FP32 deterministica**, utile come riferimento a bassa area e per studiare il determinismo dello scheduling.
 2. **Modalità superaccumulatore**, utile per studiare la somma finita indipendente dall'ordine e il costo hardware dell'accumulazione esatta.
@@ -281,7 +281,7 @@ migliori. È una misura a livello implementativo del compromesso:
 \text{area} + \text{stato} + \text{latenza} + \text{pressione sul timing}.
 \]
 
-Questo è il punto di ricerca centrale di MiniSharp: se un datapath simile a uno
+Questo è il punto di ricerca centrale di PRISM: se un datapath simile a uno
 switch contiene già stato del parser, VOQ, memoria condivisa per i pacchetti,
 arbitraggio, backpressure e slot di aggregazione, la domanda aperta è se
 l'accumulazione floating-point esatta o quasi esatta possa essere integrata

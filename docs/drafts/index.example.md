@@ -1,6 +1,6 @@
 # 1. Introduction
 
-Mini-Sharp is a bachelor thesis project on primitive hardware for network
+PRISM is a bachelor thesis project on primitive hardware for network
 computing. The work explores how a switching datapath can support collective
 operations close to the network, reducing host-side coordination and exposing a
 small, inspectable hardware interface.

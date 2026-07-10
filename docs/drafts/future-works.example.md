@@ -5,7 +5,7 @@ architecture or results pages.
 
 ## Introduction follow-up
 
-- Define Mini-Sharp and the problem it addresses.
+- Define PRISM and the problem it addresses.
 - Summarize results and performance once experiments are available.
 - Track publications, citations, and related work.
 
@@ -17,7 +17,7 @@ architecture or results pages.
 
 ## Architecture follow-up
 
-- Mini-Sharp protocol and packet format.
+- PRISM protocol and packet format.
 - RTL module ports.
 - Register map.
 - Interface protocols.

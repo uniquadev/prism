@@ -1,8 +1,8 @@
 # Protocol
 
-MiniSharp operates at **Layer 2** of the OSI model and uses a custom
+PRISM operates at **Layer 2** of the OSI model and uses a custom
 Ethernet-based protocol to identify packets that must be processed by the
-MiniSharp datapath.
+PRISM datapath.
 
 The baseline protocol supports two MPI-style collective semantics:
 
@@ -13,19 +13,19 @@ The protocol supports three data-plane modes:
 
 1. **Transparent packet forwarding**, where non-local Ethernet frames may be
    forwarded through the switch-like L2 pipeline.
-2. **Streaming collective aggregation**, where `MS_OP_COL_DATA` packets update
+2. **Streaming collective aggregation**, where `PM_OP_COL_DATA` packets update
    a reduction context and flow upward through an aggregation tree.
-3. **Result dissemination**, where `MS_OP_COL_RES` packets flow downward through
+3. **Result dissemination**, where `PM_OP_COL_RES` packets flow downward through
    a result route tree installed by the Aggregation Manager.
 
-MiniSharp is currently a research-oriented FPGA datapath, not a production
+PRISM is currently a research-oriented FPGA datapath, not a production
 Ethernet switch. The protocol therefore prioritizes simplicity, inspectability,
 hardware feasibility, and cycle-level RTL clarity over full production-grade
 management, security, and interoperability.
 
 !!! abstract "Protocol goal"
 
-    The MiniSharp protocol should make packets easy to classify early in the
+    The PRISM protocol should make packets easy to classify early in the
     pipeline. The first packet beat should contain enough information for the
     parser to decide whether the packet must be forwarded, dropped, routed to
     the setup path, consumed by the collective engine, or replicated on the
@@ -35,8 +35,8 @@ management, security, and interoperability.
 
 ## Common frame format
 
-MiniSharp frames are carried inside Ethernet frames. The Ethernet header
-provides next-hop Layer-2 addressing, while the MiniSharp header identifies the
+PRISM frames are carried inside Ethernet frames. The Ethernet header
+provides next-hop Layer-2 addressing, while the PRISM header identifies the
 protocol version, packet class, operation-specific metadata, and payload.
 
 The full first-beat diagram intentionally groups small fields to avoid
@@ -57,12 +57,12 @@ packet
 |---|---:|---|
 | `Dst MAC` | 48b | Ethernet next-hop destination MAC |
 | `Src MAC` | 48b | Ethernet source MAC |
-| `Ethertype` | 16b | `0x88B5` for MiniSharp experimental frames |
+| `Ethertype` | 16b | `0x88B5` for PRISM experimental frames |
 | `MS Control` | 16b | `Version Major`, `Version Minor`, and `Opcode` |
 | `Operation Header` | 64b | Opcode-specific fixed header |
 | `First payload bytes` | 320b | First payload fragment in the first 512-bit AXI-Stream beat |
 
-The MiniSharp control word is defined as:
+The PRISM control word is defined as:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 16, "bitWidth": 28, "rowHeight": 78, "showBits": true}} }%%
@@ -76,7 +76,7 @@ packet
 |---|---:|---|
 | `Version Major` | 4b | Incompatible protocol-format revision |
 | `Version Minor` | 4b | Compatible extension or minor revision |
-| `Opcode` | 8b | MiniSharp packet class |
+| `Opcode` | 8b | PRISM packet class |
 
 The initial experimental protocol version is:
 
@@ -85,7 +85,7 @@ The initial experimental protocol version is:
 \]
 
 Unsupported major versions are invalid. If the major version is supported but
-the minor version is newer than the local implementation, MiniSharp may process
+the minor version is newer than the local implementation, PRISM may process
 only the subset of fields defined by its supported minor version. Newer
 minor-version features are not guaranteed unless explicitly implemented.
 Reserved fields must be transmitted as zero.
@@ -94,42 +94,42 @@ Reserved fields must be transmitted as zero.
 
 ## Frame ownership and forwarding
 
-MiniSharp uses a custom EtherType to identify frames belonging to the MiniSharp
+PRISM uses a custom EtherType to identify frames belonging to the PRISM
 protocol family. In the current experimental design, `0x88B5` is used as the
-MiniSharp EtherType. This value belongs to the local experimental EtherType
+PRISM EtherType. This value belongs to the local experimental EtherType
 range and is suitable for laboratory and research use, but it is not a
 production protocol assignment.[^ethertype]
 
-MiniSharp classification happens in three stages:
+PRISM classification happens in three stages:
 
 1. The Ethernet parser reads `Dst MAC`, `Src MAC`, and `Ethertype`.
-2. If `Ethertype != 0x88B5`, the frame is treated as a non-MiniSharp Ethernet
+2. If `Ethertype != 0x88B5`, the frame is treated as a non-PRISM Ethernet
    frame and handled by the outer L2 forwarding policy.
 3. If `Ethertype == 0x88B5`, the switch first checks whether `Dst MAC` matches
-   one of its local MiniSharp termination MAC addresses. Only locally terminated
-   frames are decoded by the MiniSharp opcode parser. Other MiniSharp frames are
+   one of its local PRISM termination MAC addresses. Only locally terminated
+   frames are decoded by the PRISM opcode parser. Other PRISM frames are
    forwarded as ordinary L2 frames toward their next hop.
 
 This distinction is important: the `Dst MAC` selects the next hop or local owner
 of the frame; it does **not** decide whether the payload is a contribution or a
-result. That semantic decision is encoded by the MiniSharp opcode and by the
+result. That semantic decision is encoded by the PRISM opcode and by the
 collective context installed by the Aggregation Manager.
 
-MiniSharp may be configured with one of two outer forwarding policies:
+PRISM may be configured with one of two outer forwarding policies:
 
 | Policy | Behavior |
 |---|---|
 | `MSP_TRANSPARENT` | Non-local frames are forwarded through the normal L2 forwarding datapath. |
-| `MSP_STRICT` | Non-local or non-MiniSharp frames are dropped or redirected to a debug/control path. |
+| `MSP_STRICT` | Non-local or non-PRISM frames are dropped or redirected to a debug/control path. |
 
 The default prototype policy is expected to be `MSP_TRANSPARENT`, because
-MiniSharp is intended to behave as a switch-like datapath during hardware
+PRISM is intended to behave as a switch-like datapath during hardware
 bring-up and should not unnecessarily discard ordinary Ethernet traffic.
 
 !!! note "Setup forwarding"
 
     In-band setup packets use the same ownership rule. The Aggregation Manager
-    addresses each setup frame to the MiniSharp MAC of the switch that must
+    addresses each setup frame to the PRISM MAC of the switch that must
     install the corresponding local state. Intermediate switches may forward the
     frame; only the target switch consumes it.
 
@@ -137,7 +137,7 @@ bring-up and should not unnecessarily discard ordinary Ethernet traffic.
 
 ## Collective identifiers
 
-MiniSharp separates the identity of the installed context, the identity of a
+PRISM separates the identity of the installed context, the identity of a
 local contributor, and the position of a chunk inside the vector.
 
 | Field | Size | Meaning |
@@ -150,7 +150,7 @@ local contributor, and the position of a chunk inside the vector.
 `Collective Context ID` is not required to be a globally unique MPI
 communicator or application-level operation ID. However, v0.1 does not define
 per-hop context translation. The AM must therefore install the same 16-bit wire
-value on all switches that exchange `MS_OP_COL_DATA` or `MS_OP_COL_RES` for one
+value on all switches that exchange `PM_OP_COL_DATA` or `PM_OP_COL_RES` for one
 aggregation/result tree. Disjoint trees may reuse the same value.
 
 `Contributor ID` replaces the older `Rank` field name. At a leaf switch it may
@@ -165,10 +165,10 @@ per-chunk reduction state.
 
 ## Chunking model
 
-MiniSharp collective vectors are split into **chunks**. A chunk is represented by
-one Ethernet/MiniSharp packet and may span multiple AXI-Stream beats.
+PRISM collective vectors are split into **chunks**. A chunk is represented by
+one Ethernet/PRISM packet and may span multiple AXI-Stream beats.
 
-MiniSharp does not carry a payload-length field in the common data/result
+PRISM does not carry a payload-length field in the common data/result
 headers. The Aggregation Manager configures the collective context, including
 vector size, input format, accumulator mode, output format, number of expected
 local contributors, upstream action, and result routes.
@@ -180,7 +180,7 @@ For the standard non-jumbo Ethernet case:
 \]
 
 \[
-\mathrm{MiniSharpHeaderBytes}
+\mathrm{PRISMHeaderBytes}
 =
 1_{\mathrm{version}}
 +
@@ -199,7 +199,7 @@ For the standard non-jumbo Ethernet case:
 1490\ \mathrm{bytes}
 \]
 
-Therefore, the default MiniSharp chunk payload size for standard Ethernet frames
+Therefore, the default PRISM chunk payload size for standard Ethernet frames
 is:
 
 \[
@@ -212,7 +212,7 @@ depends on the network and device configuration.[^ethernet-frame]
 !!! note "AXI-Stream first beat"
 
     On the 512-bit AXI-Stream datapath, the first beat contains the Ethernet
-    header, MiniSharp control fields, the operation header, and the first
+    header, PRISM control fields, the operation header, and the first
     40 bytes of vector payload. Continuation beats carry payload bytes only.
     `TLAST` marks the end of the current packet, and `TKEEP` identifies valid
     bytes in the final beat.
@@ -243,7 +243,7 @@ For each chunk:
 \mathrm{ChunkIndex}\in[0,\ \mathrm{expected\_chunks}-1].
 \]
 
-The last chunk may be shorter than `MS_CHUNK_PAYLOAD_BYTES`; its valid bytes are
+The last chunk may be shorter than `PM_CHUNK_PAYLOAD_BYTES`; its valid bytes are
 determined by the configured vector size and by the packet ending signaled
 through `TLAST/TKEEP`.
 
@@ -264,31 +264,31 @@ chunks of the same vector.
 
 ## Data-plane packet classes
 
-MiniSharp packets are classified by the parser after the Ethernet ownership
-check. If the Ethernet frame carries the MiniSharp EtherType and is addressed to
-the local MiniSharp MAC, the `Opcode` field determines how the operation header
+PRISM packets are classified by the parser after the Ethernet ownership
+check. If the Ethernet frame carries the PRISM EtherType and is addressed to
+the local PRISM MAC, the `Opcode` field determines how the operation header
 and payload are interpreted.
 
 | Value | Packet class | Purpose |
 |---:|---|---|
-| `0x00` | `MS_OP_INVALID` | Internal parser decision for unsupported, malformed, or intentionally discarded packets |
-| `0x01` | `MS_OP_COL_SETUP` | Aggregation Manager installs one or more collective-context records |
-| `0x02` | `MS_OP_COL_DATA` | Packet payload is consumed by the collective engine as a contribution |
-| `0x03` | `MS_OP_COL_RES` | Packet carries a completed result chunk through the result-dissemination tree |
+| `0x00` | `PM_OP_INVALID` | Internal parser decision for unsupported, malformed, or intentionally discarded packets |
+| `0x01` | `PM_OP_COL_SETUP` | Aggregation Manager installs one or more collective-context records |
+| `0x02` | `PM_OP_COL_DATA` | Packet payload is consumed by the collective engine as a contribution |
+| `0x03` | `PM_OP_COL_RES` | Packet carries a completed result chunk through the result-dissemination tree |
 
-`MS_OP_INVALID` is not a normal transmitted packet format. It represents an
+`PM_OP_INVALID` is not a normal transmitted packet format. It represents an
 internal classification outcome. The all-zero opcode is intentionally invalid so
-that reset/default state does not accidentally encode a valid MiniSharp
+that reset/default state does not accidentally encode a valid PRISM
 operation.
 
-The opcode values are part of the MiniSharp v0.1 ABI and should be defined in
+The opcode values are part of the PRISM v0.1 ABI and should be defined in
 the RTL package, testbench, and host-side packet generator.
 
 ---
 
 ## In-band setup
 
-MiniSharp uses an **in-band setup model** for the initial FPGA prototype and
+PRISM uses an **in-band setup model** for the initial FPGA prototype and
 calls the control entity that installs collective contexts the **Aggregation
 Manager** (**AM**). The AM is a single logical actor that knows the collective
 participants, the physical or logical topology, and the placement of ranks
@@ -296,21 +296,21 @@ behind switches.
 
 The AM does not need to be implemented as a single physical host in every
 deployment. For the thesis prototype it can be trusted software, a testbench
-component, or a host-side control process that sends `MS_OP_COL_SETUP` packets
+component, or a host-side control process that sends `PM_OP_COL_SETUP` packets
 to configure each switch-local collective context.
 
 ```mermaid
 sequenceDiagram
     participant AM as Aggregation Manager
-    participant SW as MiniSharp setup path
+    participant SW as PRISM setup path
     participant CTX as Context tables
     participant CE as Collective engine
     participant RRT as Result route table
 
-    AM->>SW: MS_OP_COL_SETUP
+    AM->>SW: PM_OP_COL_SETUP
     SW->>CTX: install context and upstream action
     SW->>RRT: install result routes and replication groups
-    AM->>CE: MS_OP_COL_DATA packets arrive later
+    AM->>CE: PM_OP_COL_DATA packets arrive later
     CE->>CTX: lookup context and contributor state
     CE-->>CE: accumulate by Contributor ID and Chunk Index
     CE->>RRT: route completed result chunks
@@ -325,7 +325,7 @@ register map, or external control-plane stack.
 
     In-band setup is not production-secure by itself. A real deployment would
     need filtering, authentication, authorization, or a trusted management
-    channel. MiniSharp currently treats in-band setup as a research and
+    channel. PRISM currently treats in-band setup as a research and
     prototyping mechanism, not as a secure production management protocol.
 
 The logical AM interface is independent from the physical transport used to
@@ -337,7 +337,7 @@ control-plane API.
 
 ## Operation headers
 
-The common MiniSharp header contains a fixed 64-bit operation header. Its
+The common PRISM header contains a fixed 64-bit operation header. Its
 interpretation depends on the opcode.
 
 ```mermaid
@@ -346,21 +346,21 @@ flowchart LR
     TYPE -->|No| L2["Outer L2 policy"]
     TYPE -->|Yes| OWN{"Dst MAC local?"}
     OWN -->|No| L2
-    OWN -->|Yes| CTRL["Read MiniSharp control word"]
+    OWN -->|Yes| CTRL["Read PRISM control word"]
     CTRL --> OP{"Opcode"}
-    OP -->|MS_OP_COL_SETUP| SETUP["Setup path"]
-    OP -->|MS_OP_COL_DATA| DATA["Collective engine"]
-    OP -->|MS_OP_COL_RES| RES["Result route path"]
-    OP -->|unknown| INV["MS_OP_INVALID"]
+    OP -->|PM_OP_COL_SETUP| SETUP["Setup path"]
+    OP -->|PM_OP_COL_DATA| DATA["Collective engine"]
+    OP -->|PM_OP_COL_RES| RES["Result route path"]
+    OP -->|unknown| INV["PM_OP_INVALID"]
 ```
 
 Reserved fields must be transmitted as zero and ignored by receivers in v0.1.
 
 ---
 
-### MS_OP_COL_SETUP
+### PM_OP_COL_SETUP
 
-`MS_OP_COL_SETUP` is sent by the Aggregation Manager to install, replace, or
+`PM_OP_COL_SETUP` is sent by the Aggregation Manager to install, replace, or
 extend switch-local collective state.
 
 This packet is consumed by the setup path and must not be inserted into the
@@ -388,10 +388,10 @@ records fit in one Ethernet frame.
 
 | Record type | Purpose |
 |---:|---|
-| `MS_SETUP_CONTEXT` | Defines the collective semantic, formats, fan-in, and vector length for one context |
-| `MS_SETUP_UPSTREAM` | Defines how a completed local reduction is emitted toward the aggregation parent |
-| `MS_SETUP_RESULT_ROUTE` | Maps `(Collective Context ID, Chunk Index range)` to a replication group |
-| `MS_SETUP_REPLICATION_GROUP` | Defines the next-hop MACs and egress ports used when forwarding result chunks |
+| `PM_SETUP_CONTEXT` | Defines the collective semantic, formats, fan-in, and vector length for one context |
+| `PM_SETUP_UPSTREAM` | Defines how a completed local reduction is emitted toward the aggregation parent |
+| `PM_SETUP_RESULT_ROUTE` | Maps `(Collective Context ID, Chunk Index range)` to a replication group |
+| `PM_SETUP_REPLICATION_GROUP` | Defines the next-hop MACs and egress ports used when forwarding result chunks |
 
 Each setup record is aligned to 64-bit words and starts with the same 64-bit
 record header:
@@ -407,7 +407,7 @@ packet
 
 | Field | Size | Purpose |
 |---|---:|---|
-| `Type` | 8b | One of the `MS_SETUP_*` record types |
+| `Type` | 8b | One of the `PM_SETUP_*` record types |
 | `Len` | 8b | Record length in 64-bit words, including this header |
 | `Context ID` | 16b | Switch-local context affected by this record |
 | `Reserved` | 32b | Must be zero in v0.1 |
@@ -419,7 +419,7 @@ payload are invalid for v0.1.
 
 A context record defines the reduction behavior and per-chunk fan-in:
 
-After the common record header, `MS_SETUP_CONTEXT` carries:
+After the common record header, `PM_SETUP_CONTEXT` carries:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
@@ -438,9 +438,9 @@ packet
 
 | Field | Size | Purpose |
 |---|---:|---|
-| `collective_semantic` | 8b | `MS_COL_REDUCE` or `MS_COL_ALLREDUCE` |
-| `reduction_operator` | 8b | v0.1 supports `MS_RED_SUM` |
-| `input_format` | 8b | Wire format of incoming `MS_OP_COL_DATA` elements |
+| `collective_semantic` | 8b | `PM_COL_REDUCE` or `PM_COL_ALLREDUCE` |
+| `reduction_operator` | 8b | v0.1 supports `PM_RED_SUM` |
+| `input_format` | 8b | Wire format of incoming `PM_OP_COL_DATA` elements |
 | `accumulator_mode` | 8b | Internal accumulation strategy |
 | `output_format` | 8b | Wire format of emitted result elements |
 | `node_role` | 8b | `ROOT`, `INTERNAL`, `LEAF`, or `SINGLE` for validation/debug |
@@ -457,7 +457,7 @@ leaf waits for its local ranks, while a spine waits for its child leaves.
 An upstream action record defines what happens after the switch completes a
 local reduction chunk.
 
-After the common record header, `MS_SETUP_UPSTREAM` carries:
+After the common record header, `PM_SETUP_UPSTREAM` carries:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
@@ -474,19 +474,19 @@ packet
 |---|---:|---|
 | `parent_contributor_id` | 16b | Contributor ID used by this switch when sending to its parent |
 | `parent_egress_port` | 8b | Local port used to reach the aggregation parent |
-| `flags.has_parent` | 1b | If set, completed chunks are emitted upward as `MS_OP_COL_DATA` |
-| `parent_dst_mac` | 48b | MiniSharp MAC of the parent aggregation node |
+| `flags.has_parent` | 1b | If set, completed chunks are emitted upward as `PM_OP_COL_DATA` |
+| `parent_dst_mac` | 48b | PRISM MAC of the parent aggregation node |
 | `Reserved` | 48b total | Must be zero in v0.1 |
 
-If `has_parent == 1`, a completed chunk is emitted as `MS_OP_COL_DATA`. If
+If `has_parent == 1`, a completed chunk is emitted as `PM_OP_COL_DATA`. If
 `has_parent == 0`, the switch is the aggregation root for this context and the
-completed chunk enters the result route path as `MS_OP_COL_RES`.
+completed chunk enters the result route path as `PM_OP_COL_RES`.
 
 #### Result route records
 
 A result route record defines where completed result chunks go:
 
-After the common record header, `MS_SETUP_RESULT_ROUTE` carries one 64-bit word:
+After the common record header, `PM_SETUP_RESULT_ROUTE` carries one 64-bit word:
 
 ```mermaid
 %%{init: {"packet": {"bitsPerRow": 64, "bitWidth": 12, "rowHeight": 78, "showBits": true}} }%%
@@ -516,7 +516,7 @@ destination branches.
 
 A replication group record defines one or more local next hops:
 
-After the common record header, `MS_SETUP_REPLICATION_GROUP` begins with a
+After the common record header, `PM_SETUP_REPLICATION_GROUP` begins with a
 64-bit group header:
 
 ```mermaid
@@ -543,7 +543,7 @@ packet
 | `entries` | 8b | Number of next-hop records in the group |
 | `egress_port` | 8b | Local output port for one replica |
 | `next_hop_type` | 8b | `SWITCH` or `RANK`, used for validation/debug |
-| `dst_mac` | 48b | Next-hop MiniSharp or rank MAC |
+| `dst_mac` | 48b | Next-hop PRISM or rank MAC |
 | `Reserved` | 40b | Must be zero in v0.1 |
 
 The forwarding behavior depends on `egress_port` and `dst_mac`; `next_hop_type`
@@ -566,14 +566,14 @@ A setup packet or setup record is invalid if:
 - a result route points to an unknown replication group;
 - reserved fields are non-zero.
 
-MiniSharp trusts setup writes to succeed in the current prototype. It does not
+PRISM trusts setup writes to succeed in the current prototype. It does not
 define setup acknowledgments, setup responses, or status packets.
 
 ---
 
-### MS_OP_COL_DATA
+### PM_OP_COL_DATA
 
-`MS_OP_COL_DATA` carries one contributor's data for one vector chunk. The packet
+`PM_OP_COL_DATA` carries one contributor's data for one vector chunk. The packet
 is consumed by the collective engine and is not forwarded directly through the
 normal VOQ datapath.
 
@@ -597,20 +597,20 @@ For each chunk, the collective engine waits until it has received
 `expected_local_contributors` unique contributor IDs. Once the chunk is complete,
 the context decides the next action:
 
-- If an upstream parent is configured, the switch emits a new `MS_OP_COL_DATA`
+- If an upstream parent is configured, the switch emits a new `PM_OP_COL_DATA`
   packet toward that parent. The emitted packet uses `parent_contributor_id`,
   because the parent sees the whole child subtree as one local contributor.
 - If no upstream parent is configured, the switch is the aggregation root and
-  emits `MS_OP_COL_RES` according to the result route table.
+  emits `PM_OP_COL_RES` according to the result route table.
 
-This rule removes ambiguity: `MS_OP_COL_DATA` always belongs to the upward
+This rule removes ambiguity: `PM_OP_COL_DATA` always belongs to the upward
 aggregation phase.
 
 ---
 
-### MS_OP_COL_RES
+### PM_OP_COL_RES
 
-`MS_OP_COL_RES` carries one completed result chunk through the
+`PM_OP_COL_RES` carries one completed result chunk through the
 result-dissemination tree. It is generated by the aggregation root and may be
 forwarded by intermediate switches until it reaches the destination rank or
 ranks.
@@ -631,29 +631,29 @@ packet
 | `Chunk Index` | 24b | Result chunk index |
 | `Flags` | 8b | Must be zero in v0.1 |
 
-When a switch receives a local `MS_OP_COL_RES`, it performs a result route lookup
+When a switch receives a local `PM_OP_COL_RES`, it performs a result route lookup
 using `(Context ID, Chunk Index)`. The matching route selects one replication
 group. The switch then emits one replica per group entry, setting each replica's
 Ethernet `Dst MAC` to the configured next hop.
 
-`MS_OP_COL_RES` is never accumulated again. It always belongs to the downward
+`PM_OP_COL_RES` is never accumulated again. It always belongs to the downward
 result-dissemination phase.
 
 The result payload format is determined by the context configured by
-`MS_OP_COL_SETUP`. The output format may differ from both the input format and
+`PM_OP_COL_SETUP`. The output format may differ from both the input format and
 the internal accumulator mode.
 
 Example:
 
 ```text
-input_format     = MS_FMT_FP32
-accumulator_mode = MS_ACC_EXACT_FP32_MAG277
-output_format    = MS_FMT_FP32
+input_format     = PM_FMT_FP32
+accumulator_mode = PM_ACC_EXACT_FP32_MAG277
+output_format    = PM_FMT_FP32
 ```
 
-This means that input elements are received as `MS_FMT_FP32`, accumulated
+This means that input elements are received as `PM_FMT_FP32`, accumulated
 internally using an exact FP32 scalar-sum accumulator family, and emitted as
-`MS_FMT_FP32`.
+`PM_FMT_FP32`.
 
 ---
 
@@ -663,11 +663,11 @@ The collective semantic describes the communication-level behavior.
 
 | Value | Semantic | Meaning |
 |---:|---|---|
-| `0x00` | `MS_COL_INVALID` | Invalid or unsupported collective semantic |
-| `0x01` | `MS_COL_REDUCE` | Contributors produce a result delivered to one root rank |
-| `0x02` | `MS_COL_ALLREDUCE` | Contributors produce a result delivered to all participating ranks |
+| `0x00` | `PM_COL_INVALID` | Invalid or unsupported collective semantic |
+| `0x01` | `PM_COL_REDUCE` | Contributors produce a result delivered to one root rank |
+| `0x02` | `PM_COL_ALLREDUCE` | Contributors produce a result delivered to all participating ranks |
 
-`REDUCE` and `ALLREDUCE` are in scope for the first MiniSharp thesis protocol.
+`REDUCE` and `ALLREDUCE` are in scope for the first PRISM thesis protocol.
 Other collective semantics, such as `REDUCE_SCATTER`, are future work.
 
 `REDUCE_SCATTER` is intentionally not encoded as a special case in the result
@@ -683,40 +683,40 @@ The reduction operator describes the mathematical operation applied to elements.
 
 | Value | Operator | Meaning |
 |---:|---|---|
-| `0x00` | `MS_RED_INVALID` | Invalid or unsupported reduction operator |
-| `0x01` | `MS_RED_SUM` | Addition |
+| `0x00` | `PM_RED_INVALID` | Invalid or unsupported reduction operator |
+| `0x01` | `PM_RED_SUM` | Addition |
 
-Only `MS_RED_SUM` is in scope for the first MiniSharp thesis prototype.
+Only `PM_RED_SUM` is in scope for the first PRISM thesis prototype.
 
 ---
 
 ## Wire formats and accumulator modes
 
-MiniSharp distinguishes **wire formats** from **accumulator modes**.
+PRISM distinguishes **wire formats** from **accumulator modes**.
 
-A wire format describes how elements are encoded in `MS_OP_COL_DATA` and
-`MS_OP_COL_RES` payloads.
+A wire format describes how elements are encoded in `PM_OP_COL_DATA` and
+`PM_OP_COL_RES` payloads.
 
 | Value | Wire format | Meaning |
 |---:|---|---|
-| `0x00` | `MS_FMT_INVALID` | Invalid or unsupported wire format |
-| `0x01` | `MS_FMT_INT8` | 8-bit integer payload elements |
-| `0x02` | `MS_FMT_FP16` | IEEE binary16 payload elements |
-| `0x03` | `MS_FMT_BF16` | bfloat16 payload elements |
-| `0x04` | `MS_FMT_FP32` | IEEE binary32 payload elements |
+| `0x00` | `PM_FMT_INVALID` | Invalid or unsupported wire format |
+| `0x01` | `PM_FMT_INT8` | 8-bit integer payload elements |
+| `0x02` | `PM_FMT_FP16` | IEEE binary16 payload elements |
+| `0x03` | `PM_FMT_BF16` | bfloat16 payload elements |
+| `0x04` | `PM_FMT_FP32` | IEEE binary32 payload elements |
 
 An accumulator mode describes how the collective engine internally combines
 contributions.
 
 | Value | Accumulator mode | Meaning |
 |---:|---|---|
-| `0x00` | `MS_ACC_INVALID` | Invalid or unsupported accumulator mode |
-| `0x01` | `MS_ACC_NATIVE` | Accumulate using the native arithmetic associated with the input format |
-| `0x02` | `MS_ACC_FP32` | Accumulate using FP32 arithmetic |
-| `0x03` | `MS_ACC_DETERMINISTIC_FP32` | Wait for contributions and reduce in deterministic logical order |
-| `0x04` | `MS_ACC_EXACT_FP16_MAG40` | Exact scalar-sum accumulator family for FP16 inputs |
-| `0x05` | `MS_ACC_EXACT_BF16_MAG261` | Exact scalar-sum accumulator family for BF16 inputs |
-| `0x06` | `MS_ACC_EXACT_FP32_MAG277` | Exact scalar-sum accumulator family for FP32 inputs |
+| `0x00` | `PM_ACC_INVALID` | Invalid or unsupported accumulator mode |
+| `0x01` | `PM_ACC_NATIVE` | Accumulate using the native arithmetic associated with the input format |
+| `0x02` | `PM_ACC_FP32` | Accumulate using FP32 arithmetic |
+| `0x03` | `PM_ACC_DETERMINISTIC_FP32` | Wait for contributions and reduce in deterministic logical order |
+| `0x04` | `PM_ACC_EXACT_FP16_MAG40` | Exact scalar-sum accumulator family for FP16 inputs |
+| `0x05` | `PM_ACC_EXACT_BF16_MAG261` | Exact scalar-sum accumulator family for BF16 inputs |
+| `0x06` | `PM_ACC_EXACT_FP32_MAG277` | Exact scalar-sum accumulator family for FP32 inputs |
 
 !!! note "Why `MAG40`, `MAG261`, and `MAG277`?"
 
@@ -746,7 +746,7 @@ For the detailed derivation, see
 !!! note "Input, accumulator, and output roles"
 
     `input_format`, `accumulator_mode`, and `output_format` are intentionally
-    separate. MiniSharp may receive data in one representation, accumulate it
+    separate. PRISM may receive data in one representation, accumulate it
     using a reproducible internal strategy, and emit results in a format selected
     by the Aggregation Manager.
 
@@ -765,7 +765,7 @@ The topology contains one spine, two leaves, and four participating ranks:
 - `S0` is the aggregation root;
 - `rank1` is the only result destination.
 
-For chunk `i`, MiniSharp computes the element-wise reduction
+For chunk `i`, PRISM computes the element-wise reduction
 
 \[
 \mathbf{result}[i] =
@@ -779,9 +779,9 @@ illustrated step.
 ### 1. Install the collective context
 
 The AM knows the topology, participant placement, and root rank. It sends an
-individually addressed `MS_OP_COL_SETUP` frame to each switch. The Ethernet
+individually addressed `PM_OP_COL_SETUP` frame to each switch. The Ethernet
 destination MAC identifies the switch that consumes a setup frame; intermediate
-switches only forward frames addressed to another MiniSharp node.
+switches only forward frames addressed to another PRISM node.
 
 For v0.1, the AM installs the same wire `Context ID`, shown as `C`, throughout
 this tree because no per-hop context translation is defined. The relevant local
@@ -789,9 +789,9 @@ state is:
 
 | Node | Expected local contributors | Upstream action after local completion | Result route for chunk `i` |
 |---|---|---|---|
-| `L0` | `rank0`, `rank1` | Emit one `MS_OP_COL_DATA` to `S0` as the configured parent contributor | Replication group `{rank1}` |
-| `L1` | `rank2`, `rank3` | Emit one `MS_OP_COL_DATA` to `S0` as the configured parent contributor | No result route |
-| `S0` | `L0`, `L1` | No parent; inject the completed chunk as `MS_OP_COL_RES` | Replication group `{L0}` |
+| `L0` | `rank0`, `rank1` | Emit one `PM_OP_COL_DATA` to `S0` as the configured parent contributor | Replication group `{rank1}` |
+| `L1` | `rank2`, `rank3` | Emit one `PM_OP_COL_DATA` to `S0` as the configured parent contributor | No result route |
+| `S0` | `L0`, `L1` | No parent; inject the completed chunk as `PM_OP_COL_RES` | Replication group `{L0}` |
 
 Each replication-group entry contains a local egress port and the destination
 MAC of its next hop. Therefore a switch needs only its local decision; it does
@@ -804,7 +804,7 @@ not discover the global topology at runtime.
 
 ### 2. Submit rank contributions
 
-For chunk `i`, every rank sends one `MS_OP_COL_DATA` packet to its local leaf.
+For chunk `i`, every rank sends one `PM_OP_COL_DATA` packet to its local leaf.
 The operation header carries the leaf-local `Contributor ID`, `Context ID = C`,
 and `Chunk Index = i`; the Ethernet destination MAC selects the receiving leaf.
 
@@ -841,7 +841,7 @@ satisfied.
 
 ### 4. Aggregate at the root switch
 
-The upstream action at each leaf creates a new `MS_OP_COL_DATA` packet addressed
+The upstream action at each leaf creates a new `PM_OP_COL_DATA` packet addressed
 to `S0`. Its `Contributor ID` is the configured `parent_contributor_id`, so `S0`
 sees each whole leaf subtree as one contributor rather than seeing the original
 ranks.
@@ -854,8 +854,8 @@ After receiving the partials from both `L0` and `L1`, `S0` computes
 
 The opcode selected after completion comes from the installed upstream action,
 not from the destination MAC: a node with `has_parent == 1` emits
-`MS_OP_COL_DATA`; the aggregation root has `has_parent == 0` and injects
-`MS_OP_COL_RES` into the result route path.
+`PM_OP_COL_DATA`; the aggregation root has `has_parent == 0` and injects
+`PM_OP_COL_RES` into the result route path.
 
 <figure markdown="span">
   ![L0 and L1 send one COL_DATA partial each to S0, which completes the final sum.](../../assets/images/protocol/reduce-lifecycle/04-root-reduction.png){ loading=lazy }
@@ -865,7 +865,7 @@ not from the destination MAC: a node with `has_parent == 1` emits
 ### 5. Route the result to `rank1`
 
 `S0` looks up `(C, i)` in its result route table. The matching replication group
-contains only `L0`, so `S0` emits one `MS_OP_COL_RES` replica on the `L0` egress
+contains only `L0`, so `S0` emits one `PM_OP_COL_RES` replica on the `L0` egress
 port and sets its Ethernet destination MAC to the configured MAC of `L0`.
 
 `L0` consumes the locally addressed frame and performs the same lookup. Its
@@ -893,8 +893,8 @@ leaf or a rank, and no result flooding is required.
 longer needed after a switch has successfully handed off its completed output:
 
 - `L0` and `L1` release their chunk state after emitting their upward
-  `MS_OP_COL_DATA` packets;
-- `S0` releases its chunk state after injecting `MS_OP_COL_RES` into the result
+  `PM_OP_COL_DATA` packets;
+- `S0` releases its chunk state after injecting `PM_OP_COL_RES` into the result
   path;
 - the configured context, upstream actions, result routes, and replication
   groups remain installed for the other chunks in the collective.
@@ -910,10 +910,10 @@ not on keeping a completed accumulator alive.
 
 !!! note "Packet loss in v0.1"
 
-    This is the nominal successful lifecycle. MiniSharp v0.1 does not provide
+    This is the nominal successful lifecycle. PRISM v0.1 does not provide
     acknowledgment, retransmission, timeout, or abort packets. A lost
-    `MS_OP_COL_DATA` leaves the destination chunk incomplete; a lost
-    `MS_OP_COL_RES` leaves the root rank without that result. Implementations may
+    `PM_OP_COL_DATA` leaves the destination chunk incomplete; a lost
+    `PM_OP_COL_RES` leaves the root rank without that result. Implementations may
     expose context occupancy and drop/error counters for experiments, while
     reliable completion and recovery remain future work.
 
@@ -932,8 +932,8 @@ The configured context and route tables are persistent control-plane state. The
 per-chunk accumulator state is temporary data-plane state.
 
 A switch can release the local accumulator state for a chunk after it has
-successfully emitted the completed chunk upward as `MS_OP_COL_DATA` or injected
-it into the result route path as `MS_OP_COL_RES`. A leaf that participates in
+successfully emitted the completed chunk upward as `PM_OP_COL_DATA` or injected
+it into the result route path as `PM_OP_COL_RES`. A leaf that participates in
 `ALLREDUCE` does not need to keep its accumulator state while waiting for the
 result to return; result forwarding uses the persistent route tables.
 
@@ -943,7 +943,7 @@ context identifiers that are not installed, duplicate contributions for the same
 `(Collective Context ID, Contributor ID, Chunk Index)`, or payloads inconsistent
 with the configured collective context.
 
-MiniSharp v0.1 does not generate error packets. Invalid packets are dropped or
+PRISM v0.1 does not generate error packets. Invalid packets are dropped or
 ignored, and the implementation may increment simulation-visible, debug-visible,
 or register-visible error counters. Reliable completion protocols,
 retransmission, explicit abort messages, and production fault handling are
@@ -957,9 +957,9 @@ outside the first thesis protocol.
 [^ethernet-frame]: Standard Ethernet payload is 1500 bytes for non-jumbo frames.
     The Ethernet header is 14 bytes and the FCS is 4 bytes; preamble, SFD, and
     interpacket gap are physical-layer overhead and are normally not part of the
-    AXI-Stream payload seen by MiniSharp.
+    AXI-Stream payload seen by PRISM.
 
-[^superaccumulator-sizing]: The sizing rule follows the MiniSharp
+[^superaccumulator-sizing]: The sizing rule follows the PRISM
     scalar-reduction model. It is intentionally different from the wider
-    dot-product Kulisch bound because MiniSharp collective reductions sum
+    dot-product Kulisch bound because PRISM collective reductions sum
     already-formed numeric values rather than products.
