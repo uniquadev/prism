@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from fakes import FakeSwitchClient
 from prism_protocol.client import PrismManager
@@ -242,6 +243,21 @@ class HostCoordinatorTests(unittest.TestCase):
                 self.descriptors,
                 self.bindings,
                 reduce_root_rank_id=20,
+                parent_edges={"l0": "s0"},
+            )
+
+    def test_allreduce_routes_must_reach_every_participant(self) -> None:
+        descriptors = {
+            switch_id: replace(descriptor, semantic=CollectiveSemantic.ALLREDUCE)
+            for switch_id, descriptor in self.descriptors.items()
+        }
+
+        with self.assertRaisesRegex(ValueError, "participant semantics"):
+            self.coordinator.create_operation(
+                self.group,
+                12,
+                descriptors,
+                self.bindings,
                 parent_edges={"l0": "s0"},
             )
 

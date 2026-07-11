@@ -1,70 +1,80 @@
 # 5.1 Protocollo
 
-Protocol 1.0 congela identità degli oggetti, transazioni di management,
-ammissione a due fasi, bitmap di fase e consegna affidabile hop-by-hop. Le
-revisioni future dovranno estendere questi contratti senza indebolire la
-sicurezza delle generazioni né interpretare la perdita Ethernet come successo.
+Il Protocollo 1.0 fissa identità degli oggetti, transazioni di gestione,
+ammissione a due fasi, bitmap di avanzamento e consegna affidabile su ciascun
+collegamento diretto. Le revisioni future dovranno estendere questi contratti
+senza indebolire la sicurezza delle generazioni né interpretare una perdita
+Ethernet come successo.
 
 ## Parziali esatti in un albero
 
-L'estensione aritmetica principale è un formato lossless per lo stato parziale
-dell'accumulatore. Serializzare in FP32 un accumulatore locale esatto introduce
-un arrotondamento a ogni livello e non garantisce una riduzione globale esatta e
-indipendente dall'albero. Un futuro profilo `EXACT_PARTIAL_WIRE` dovrà definire
-ampiezza, normalizzazione, flag per valori speciali, overflow, merge, geometria
-del payload e negoziazione prima di pubblicare una tupla esatta multilivello.
+L'estensione aritmetica principale è un formato senza perdita per lo stato
+parziale dell'accumulatore. Serializzare in FP32 un accumulatore locale esatto
+introduce un arrotondamento a ogni livello e non garantisce una riduzione globale
+esatta e indipendente dall'albero. Un futuro profilo `EXACT_PARTIAL_WIRE` dovrà
+definire ampiezza, normalizzazione, indicatori dei valori speciali, overflow,
+regole di fusione, geometria del payload e negoziazione delle funzionalità prima
+di dichiarare una tupla esatta multilivello.
 
 ## Memoria di completamento scalabile
 
-La bitmap di fase completa rende la deduplicazione indipendente dalla finestra
-degli Aggregation Slot. Si possono studiare BRAM/URAM a banchi, memoria esterna,
-mappe sparse compresse, sommari gerarchici o allocazione a pagine. Ogni
-ottimizzazione deve conservare tombstone esatti per chunk, contatori di
-completamento efficienti e accounting atomico visibile in `OP_PREPARE`.
+La bitmap completa rende la deduplicazione indipendente dalla finestra degli
+Aggregation Slot attivi. Si possono studiare BRAM/URAM a banchi, memoria esterna,
+mappe sparse compresse, riepiloghi gerarchici o allocazione a pagine. Ogni
+ottimizzazione deve conservare marcatori esatti per chunk, contatori di
+completamento efficienti e conteggio atomico delle risorse visibile durante
+`OP_PREPARE`.
 
 ## Affidabilità consapevole della congestione
 
-Il profilo obbligatorio `PM_OP_COL_PROGRESS` fornisce ACK, selective ACK,
-finestra e retry. Un profilo successivo potrà aggiungere suggerimenti di rate,
-integrazione ECN, timer adattivi ed equità tra operazioni concorrenti. La policy
-deve restare separata dal payload del risultato e trattenere ogni replica fino
-all'ACK di tutti i Result Path.
+Il profilo obbligatorio `PM_OP_COL_PROGRESS` fornisce ACK, ACK selettivi,
+finestra di ricezione e informazioni di ritrasmissione. Un profilo successivo
+potrà aggiungere indicazioni esplicite sulla frequenza di invio, integrazione
+ECN, timer adattivi ed equità tra operazioni concorrenti. Questa politica resta
+separata dal payload del risultato e conserva ogni replica fino all'ACK di tutti
+i Result Path.
+
+Il Protocollo 1.0 affida al runtime/endpoint la deduplicazione del risultato
+finale fino al rilascio. Un futuro profilo di finestra lato risultato potrà
+standardizzare marcatori e ACK degli endpoint prima di dichiarare una consegna
+applicativa exactly-once.
 
 ## Profili di autenticazione
 
-La versione 1.0 negozia canali esterni autenticati o autenticazione in-protocol
-senza scegliere una primitiva non implementata nell'RTL. Lavori futuri potranno
-congelare tag, derivazione delle chiavi, sequenza anti-replay, rekey e
-autenticazione dei dati. L'analisi dovrà coprire contributor falsificati,
-generazioni stale, replay del management, takeover del lease e recovery da reset.
+La versione 1.0 negozia canali esterni autenticati o autenticazione interna al
+protocollo senza scegliere una primitiva non implementata nell'RTL. I lavori
+futuri potranno definire tag, derivazione delle chiavi, sequenza anti-ripetizione,
+rinnovo delle chiavi e autenticazione dei dati. L'analisi dovrà coprire identità
+dei contributori falsificate, generazioni obsolete, ripetizione dei messaggi di
+gestione, subentro nella sessione e ripristino dopo un reset.
 
-## Altre collettive e routing
+## Altre collettive e instradamento
 
-`ALLREDUCE` e `REDUCE_SCATTER` hanno codici assegnati, ma uno switch pubblica
-soltanto semantiche implementate. Profili futuri possono definire proprietà
-dello scatter, tensori segmentati, placement non contiguo, variazioni di
-topologia e altri operatori associativi. Restano necessari geometria invariabile,
-ACK esplicito per path e ammissione atomica.
+`REDUCE_SCATTER` possiede un codice semantico assegnato, ma uno switch pubblica
+soltanto le semantiche implementate. Profili futuri potranno definire proprietà
+della distribuzione, tensori segmentati, posizionamento non contiguo del
+risultato, variazioni di topologia e altri operatori associativi. Restano
+necessari geometria invariabile, ACK esplicito per percorso e ammissione atomica.
 
-## Recovery distribuito e osservabilità
+## Ripristino distribuito e osservabilità
 
-Un AM di produzione richiederà journal durevoli, takeover tra repliche dell'AM,
-rilevamento di gap negli eventi, telemetria della replay pressure e
-reinstallazione coordinata dopo una variazione del Device Boot ID. `OP_STATUS`
-resta la fonte autorevole; gli eventi sono un'ottimizzazione. Uno schema futuro
-potrà standardizzare contatori e trace senza esporre indirizzi privati delle
-tabelle hardware.
+Un AM di produzione richiederà registri durevoli delle operazioni, subentro tra
+repliche dell'AM, rilevamento di lacune negli eventi, telemetria sulla pressione
+delle memorie di ritrasmissione e reinstallazione coordinata dopo una variazione
+del Device Boot ID. `OP_STATUS` resta la fonte autorevole; gli eventi sono
+un'ottimizzazione. Uno schema diagnostico futuro potrà standardizzare contatori
+e tracce senza esporre indirizzi privati delle tabelle hardware.
 
 Se Host Coordinator e AM sono servizi separati, anche il loro RPC richiede
-identità stabili delle richieste, semantiche di riconnessione e replay degli
-stati di disponibilità e completamento. Il recovery non deve mai generare uno
-start grant per i rank finché l'AM non ha ristabilito che ogni switch target è
-`ACTIVE`.
+identità stabili delle richieste, regole di riconnessione e ripetizione degli
+esiti ACTIVE, COMPLETE, RELEASED e degli errori terminali. Il ripristino non deve
+mai creare uno start grant finché l'AM non ha ristabilito ogni destinatario come
+`ACTIVE` e deve risvegliare tutti i rank in attesa con un esito coerente.
 
 ## Relazione con sistemi precedenti
 
-SHARP motiva la separazione tra integrazione host delle collettive e aggregation
-manager, oltre alla distinzione tra gruppo riutilizzabile, singola richiesta e
+SHARP motiva la separazione tra integrazione host delle collettive e Aggregation
+Manager, oltre alla distinzione tra gruppo riutilizzabile, singola richiesta e
 risorse limitate di aggregazione. PRISM usa queste idee soltanto come lezioni
-architetturali e non dichiara compatibilità di protocollo, wire, API, management
-o trasporto con NVIDIA SHARP o NVLink SHARP.
+architetturali e non dichiara compatibilità di protocollo, wire, API, gestione o
+trasporto con NVIDIA SHARP o NVLink SHARP.

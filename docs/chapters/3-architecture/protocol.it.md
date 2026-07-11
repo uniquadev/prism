@@ -234,7 +234,8 @@ runtime porta prima tutti i rank attesi a una barriera lato host; l'Host
 Coordinator chiede quindi all'AM di attivare un'operazione. Soltanto dopo che
 ogni switch destinatario ha riportato `ACTIVE`, l'AM restituisce uno
 `StartGrant`, che il coordinatore distribuisce ai rank tramite il canale host
-affidabile del runtime.
+affidabile del runtime. Lo stesso canale trasporta in seguito a tutti i rank
+l'esito terminale `DONE` oppure `ERROR`.
 
 Il grant fornisce a ogni rank `Job ID`, `Group ID/Generation`, `Operation
 ID/Generation`, Contributor ID locale, MAC della foglia destinataria, MAC di
@@ -249,6 +250,12 @@ PRISM. Nel prototipo coordinatore e AM possono condividere un processo e usare
 una chiamata di funzione; in un deployment possono comunicare tramite RPC.
 Restano due ruoli logici distinti, e né la richiesta host né `StartGrant`
 introducono un opcode `PM_*`.
+
+L'Host Coordinator è un ruolo logico del runtime, non necessariamente un
+processo aggiuntivo. Può essere eseguito in un rank partecipante, in un servizio
+separato del runtime oppure accanto all'AM. Per rendere concreta la storyboard,
+l'esempio seguente lo colloca in `rank0`: `rank0` continua a contribuire dati
+come gli altri rank e gestisce anche la barriera lato host.
 
 ### Consegna specifica per ciascun destinatario
 
@@ -579,6 +586,8 @@ può ricevere. Non costituisce mai il segnale di avvio dell'albero: tale segnale
 proviene dall'Host Coordinator soltanto dopo che l'AM ha osservato tutti gli
 switch in stato `ACTIVE`. In questo modo ogni collegamento diretto può
 ritrasmettere localmente i chunk mancanti senza riavviare l'operazione end-to-end.
+Un ACK termina nel mittente immediatamente precedente: non viene mai inoltrato
+nell'albero come lo stesso ACK.
 
 | Campo | A che cosa serve | Perché è necessario |
 |---|---|---|
@@ -642,14 +651,16 @@ Per il chunk `i`:
 
 ### 1. Richiedere la collettiva
 
-I quattro rank entrano nella stessa collettiva tramite il runtime. L'Host
-Coordinator attende l'intero insieme dei partecipanti e chiede quindi all'AM di
+I quattro rank entrano nella stessa collettiva tramite il runtime. In questa
+storyboard, `rank0` ospita anche l'Host Coordinator: entra localmente nella
+barriera, mentre il runtime porta allo stesso punto gli arrivi degli altri rank.
+Quando l'insieme dei partecipanti è completo, il Coordinator chiede all'AM di
 avviare l'operazione. In questa fase non viene ancora inviato alcun pacchetto
 dati PRISM.
 
 <figure markdown="span">
-  ![I quattro rank raggiungono una barriera lato host. L'Host Coordinator invia quindi una sola richiesta BEGIN_OPERATION all'Aggregation Manager separato, mentre l'albero spine-leaf è ancora inattivo.](../../assets/images/protocol/reduce-lifecycle/01-host-collective-request.png){ loading=lazy }
-  <figcaption>La richiesta applicativa raggiunge l'AM tramite un'API host, non come frame Ethernet PRISM.</figcaption>
+  ![Un bus blu del runtime collega rank0, rank1, rank2 e rank3 senza proseguire oltre rank3. Rank0 ospita l'Host Coordinator, che attende tutti gli arrivi e invia quindi BEGIN_OPERATION all'AM mentre l'albero degli switch resta inattivo.](../../assets/images/protocol/reduce-lifecycle/01-host-collective-request.png){ loading=lazy }
+  <figcaption>Il badge del Coordinator appartiene a <code>rank0</code>. Il bus blu e <code>BEGIN_OPERATION</code> rappresentano comunicazione del runtime host, non pacchetti Ethernet PRISM.</figcaption>
 </figure>
 
 ### 2. Configurare l'albero degli switch
@@ -675,13 +686,14 @@ ammissione, completamento e retry appartengono invece a questa Operation.
 ### 3. Sbloccare i rank
 
 L'AM restituisce `StartGrant` soltanto dopo la conferma `ACTIVE` da parte di
-`S0`, `L0` e `L1`. L'Host Coordinator distribuisce quindi i grant specifici per
-rank. Una foglia non invia un ACK di avvio: possiede soltanto conoscenza locale
-e non può dimostrare che l'intero albero sia pronto.
+`S0`, `L0` e `L1`. L'Host Coordinator in `rank0` pubblica quindi i grant
+specifici per sé e per gli altri tre rank tramite lo stesso canale del runtime.
+Una foglia non invia un ACK di avvio: possiede soltanto conoscenza locale e non
+può dimostrare che l'intero albero sia pronto.
 
 <figure markdown="span">
-  ![S0, L0 e L1 sono tutti attivi. L'Aggregation Manager restituisce START_GRANT all'Host Coordinator, che invia START ai quattro rank tramite il canale del runtime host.](../../assets/images/protocol/reduce-lifecycle/03-global-start-grant.png){ loading=lazy }
-  <figcaption>Il grant lato host è la barriera di disponibilità globale; <code>PM_OP_COL_PROGRESS</code> compare soltanto dopo l'inizio del traffico DATA o RES.</figcaption>
+  ![S0, L0 e L1 sono attivi. L'AM restituisce START_GRANT all'Host Coordinator ospitato da rank0; il suo bus blu del runtime termina su rank0, rank1, rank2 e rank3 senza proseguire oltre alcun rank.](../../assets/images/protocol/reduce-lifecycle/03-global-start-grant.png){ loading=lazy }
+  <figcaption>Il grant lato host costituisce la barriera di disponibilità globale. Il Coordinator è ospitato da <code>rank0</code>, non è un quinto partecipante.</figcaption>
 </figure>
 
 ### 4. Inviare i contributi dei rank
@@ -727,9 +739,15 @@ Dopo aver accettato entrambe le somme parziali, `S0` calcola il chunk finale:
 \mathbf{result}[i]=\mathbf{partial}_0[i]+\mathbf{partial}_1[i].
 \]
 
+L'accettazione sicura di ogni parziale costituisce anche un passaggio di
+responsabilità locale. `S0` invia un ACK `PM_OP_COL_PROGRESS` a `L0` e un altro
+a `L1`. Dopo aver ricevuto il proprio ACK, la foglia può riutilizzare il replay
+buffer che conteneva il parziale del chunk `i`; non attende che il risultato
+finale raggiunga `rank1`.
+
 <figure markdown="span">
-  ![L0 e L1 inviano a S0 una somma parziale PM_OP_COL_DATA ciascuno; S0 calcola il chunk finale.](../../assets/images/protocol/reduce-lifecycle/06-root-reduction.png){ loading=lazy }
-  <figcaption>Quattro pacchetti dei rank diventano due pacchetti parziali prima di raggiungere la radice di aggregazione.</figcaption>
+  ![L0 e L1 inviano a S0 due parziali DATA distinti. S0 restituisce un ACK locale a ciascuna foglia, che può quindi riutilizzare il proprio replay buffer, e calcola il chunk finale.](../../assets/images/protocol/reduce-lifecycle/06-root-reduction.png){ loading=lazy }
+  <figcaption>Ogni ACK tratteggiato appartiene a un trasferimento DATA foglia-S0; nessuno dei due proviene da <code>rank1</code>.</figcaption>
 </figure>
 
 ### 7. Instradare il risultato verso `rank1`
@@ -738,46 +756,74 @@ La rotta in `S0` seleziona una voce di replica verso `L0`; quella in `L0`
 seleziona `rank1`. `L1` e gli altri rank non ricevono traffico di risultato.
 
 <figure markdown="span">
-  ![Il pannello sinistro mostra PM_OP_COL_RES che scende nell'albero spine-leaf da S0 a L0 e rank1. Il pannello destro mostra gli ACK PM_OP_COL_PROGRESS che tornano da rank1 a L0 e da L0 a S0.](../../assets/images/protocol/reduce-lifecycle/07-result-and-acks.png){ loading=lazy }
-  <figcaption>I risultati viaggiano verso <code>rank1</code>; ogni ACK torna soltanto al mittente immediatamente precedente.</figcaption>
+  ![In un unico albero spine-leaf, un risultato e il relativo ACK locale collegano S0 e L0 sul Path A; un altro risultato e un ACK distinto collegano L0 e rank1 sul Path B. Ogni freccia tocca sorgente e destinazione.](../../assets/images/protocol/reduce-lifecycle/07-result-and-acks.png){ loading=lazy }
+  <figcaption>Path A e Path B sono trasferimenti indipendenti. <code>ACK B</code> termina in <code>L0</code>; <code>ACK A</code> è una risposta distinta generata da <code>L0</code>.</figcaption>
 </figure>
 
 Ethernet non comunica al mittente che il nodo successivo ha accettato il
-pacchetto. `S0` conserva quindi una copia finché `L0` conferma il Path A; `L0`
-conserva la propria finché `rank1` conferma il Path B. La perdita del pacchetto o
-dell'ACK causa una ritrasmissione. Uno switch sopprime un risultato già accettato
-sullo stesso Result Path locale e conferma nuovamente il duplicato. Nel rank
-finale, il Protocollo 1.0 richiede al runtime/endpoint di deduplicare usando
-Operation handle, Result Path ID e Chunk Index fino al rilascio; il solo
-protocollo degli switch non garantisce una consegna applicativa exactly-once.
+pacchetto. `S0` conserva quindi la copia A finché `L0` non trattiene il risultato
+in modo sicuro e restituisce `ACK A`. `L0` può inviare tale ACK senza attendere
+`rank1`: ha assunto la responsabilità del Path B e conserva una propria copia
+finché `rank1` non restituisce `ACK B`. Un ACK chiude quindi un singolo
+trasferimento diretto e rende riutilizzabile lo slot di replay limitato del
+mittente. La perdita del pacchetto o dell'ACK causa un retry soltanto su quel
+collegamento.
+
+Uno switch sopprime un risultato già accettato sullo stesso Result Path locale e
+conferma nuovamente il duplicato. Nel rank finale, il Protocollo 1.0 richiede al
+runtime/endpoint di deduplicare usando Operation handle, Result Path ID e Chunk
+Index fino al rilascio; il solo protocollo degli switch non garantisce una
+consegna applicativa exactly-once.
 
 ### 8. Completare l'operazione
 
-Dopo gli ACK di tutti i Result Path richiesti, i buffer pesanti dei chunk possono
-essere riutilizzati. L'operazione conserva però handle e tombstone di completamento,
-così da respingere ancora i duplicati tardivi.
+Il recupero dei buffer avviene progressivamente, non come un singolo evento
+globale. `L1` può completarsi dopo che `S0` ha confermato tutti i suoi parziali.
+`S0` si completa quando ogni risultato finale è stato accettato dal next hop
+configurato, `L0`. Poiché `L0` svolge entrambi i ruoli, si completa soltanto dopo
+che `S0` ha confermato tutti i suoi parziali e `rank1` ha confermato tutti i
+risultati. I tre switch possono quindi raggiungere `COMPLETE` in momenti diversi.
+
+Al completamento locale, i buffer pesanti di aggregazione e replay sono già
+riutilizzabili. Lo switch conserva ancora l'Operation handle, lo stato di
+completamento/fase e i tombstone di deduplicazione, così da respingere i pacchetti
+tardivi.
 
 <figure markdown="span">
-  ![S0, L0 e L1 liberano ciascuno i propri buffer locali dei chunk dopo tutti gli ACK richiesti, mentre lo stato di Operation e Group rimane installato.](../../assets/images/protocol/reduce-lifecycle/08-operation-complete.png){ loading=lazy }
-  <figcaption><code>COMPLETE</code> recupera localmente lo storage pesante per chunk in ogni switch; non libera l'Operation handle.</figcaption>
+  ![S0, L0 e L1 riportano COMPLETE in modo indipendente. I buffer per chunk sono già riutilizzabili, mentre ciascuno switch conserva il proprio stato di Operation. L'AM osserva lo stato tramite interrogazioni specifiche per destinatario.](../../assets/images/protocol/reduce-lifecycle/08-operation-complete.png){ loading=lazy }
+  <figcaption><code>COMPLETE</code> registra che uno switch ha terminato i propri obblighi locali; non è un ACK globale del risultato e non libera l'Operation handle.</figcaption>
 </figure>
 
-Quando ogni switch riporta `COMPLETE`, l'AM può comunicare il completamento
-globale all'Host Coordinator.
+L'Host Coordinator chiama `wait_operation(...)`; l'AM usa le risposte autorevoli
+di `OP_STATUS`, eventualmente anticipate da `OP_COMPLETE_EVENT`, finché ogni
+switch non riporta `COMPLETE`. La chiamata restituisce quindi al coordinatore il
+completamento globale e ritira i vecchi start grant. La singola linea di gestione
+nel disegno rappresenta scambi di stato distinti e specifici per `S0`, `L0` e
+`L1`; `S0` non riassume lo stato dei figli.
 
 ### 9. Rilasciare lo stato dell'Operation
 
-Dopo il completamento, l'Host Coordinator richiede il rilascio. L'AM invia a
-ciascuno switch un `OP_RELEASE` specifico per destinazione e attende tutte le
-risposte prima di confermare il rilascio al lato host.
+L'AM non rilascia autonomamente un'Operation. Dopo che `wait_operation(...)` ha
+restituito il completamento globale, l'Host Coordinator in `rank0` chiama
+esplicitamente `release_operation(...)`. L'AM invia quindi a ciascuno switch un
+`OP_RELEASE` specifico per destinazione e attende tutte le risposte.
+
+Il comando resta necessario anche se i buffer dei chunk sono già riutilizzabili:
+elimina l'Operation handle conservato, lo stato di completamento/fase, i tombstone
+di retry e deduplicazione e la proprietà residua dell'Operation ID. La topologia
+riutilizzabile del Group rimane installata.
 
 <figure markdown="span">
-  ![L'AM invia richieste OP_RELEASE separate indirizzate a S0, L0 e L1. Ogni switch libera il proprio stato locale di Operation, mentre la configurazione riutilizzabile del Group resta installata.](../../assets/images/protocol/reduce-lifecycle/09-operation-release.png){ loading=lazy }
-  <figcaption>Il rilascio avviene indipendentemente in <code>S0</code>, <code>L0</code> e <code>L1</code>; lo spine inoltra soltanto le richieste non locali.</figcaption>
+  ![L'Host Coordinator ospitato da rank0 chiama release_operation sull'AM. L'AM invia richieste OP_RELEASE separate indirizzate a S0, L0 e L1; ogni switch libera lo stato di Operation conservato mentre il Group resta installato.](../../assets/images/protocol/reduce-lifecycle/09-operation-release.png){ loading=lazy }
+  <figcaption>Il Coordinator avvia il rilascio. <code>S0</code> consuma la propria richiesta e inoltra invariate quelle per <code>L0</code>/<code>L1</code>; il ritorno verde <code>RELEASED</code> avviene soltanto dopo ogni risposta.</figcaption>
 </figure>
 
-Lo stesso Operation ID può poi essere riutilizzato soltanto con una generazione
-superiore.
+Soltanto dopo ogni `OP_RELEASE_RESPONSE` l'AM restituisce `RELEASED` all'Host
+Coordinator. Lo stesso Operation ID può poi essere riutilizzato soltanto con una
+generazione superiore e il Coordinator conclude la chiamata collettiva di ogni
+rank con `DONE`. Un fallimento viene propagato a tutti come lo stesso `ERROR`
+terminale. Questi esiti host usano il canale del runtime, non pacchetti Ethernet
+`PM_*`.
 
 ### Differenza di `ALLREDUCE`
 
@@ -798,10 +844,12 @@ Gli stati `PREPARED` o `ACTIVE` possono invece passare ad `ABORTED`, ma i
 tombstone delle generazioni obsolete e del completamento rimangono fino al
 rilascio.
 
-Un'operazione diventa `COMPLETE` solo dopo la conferma di ogni chunk e replica di
-risultato richiesti e quando non rimane alcuna ritrasmissione in sospeso. Gli
-eventi di completamento sono notifiche utili, mentre `OP_STATUS` rimane la fonte
-autorevole.
+In un singolo switch, un'operazione diventa `COMPLETE` soltanto dopo che ogni
+output di aggregazione locale e ogni replica di risultato richiesta localmente,
+per tutti i chunk, sono stati confermati e non rimane alcun retry in sospeso. Una
+foglia priva del ruolo di consegna del risultato non attende alcun ACK di
+risultato. Gli eventi di completamento sono notifiche utili, mentre `OP_STATUS`
+rimane la fonte autorevole.
 
 Un pacchetto o una transazione non è valido, per esempio, quando contiene una
 versione o un opcode non supportati, un TLV malformato, una sessione o generazione

@@ -223,7 +223,8 @@ A collective call does not make ranks transmit immediately. The runtime first
 brings all expected ranks to a host-side barrier; the Host Coordinator then asks
 the AM to activate one operation. Only after every target switch reports
 `ACTIVE` does the AM return a `StartGrant`, which the coordinator distributes to
-the ranks through the runtime's reliable host channel.
+the ranks through the runtime's reliable host channel. The same channel later
+carries a terminal `DONE` or `ERROR` outcome to every rank.
 
 The grant gives each rank the `Job ID`, `Group ID/Generation`, `Operation
 ID/Generation`, local Contributor ID, destination leaf MAC, result destination
@@ -237,6 +238,12 @@ Host coordination is deliberately outside the PRISM Ethernet wire protocol. A
 prototype may co-locate coordinator and AM behind a function call; a deployment
 may separate them with RPC. They remain distinct logical roles, and neither the
 host request nor `StartGrant` introduces a `PM_*` opcode.
+
+The Host Coordinator is a logical runtime role, not a mandatory extra process.
+It may run inside a participating rank, in a separate runtime service, or beside
+the AM. To keep the storyboard concrete, the example below places it in
+`rank0`: `rank0` still contributes data like every other rank while also
+coordinating the host-side barrier.
 
 ### Target-specific delivery
 
@@ -553,7 +560,8 @@ it reports what the adjacent receiver accepted and how much more traffic it can
 receive. It is never the tree-wide start signal; that signal comes from the Host
 Coordinator only after the AM has observed every switch as `ACTIVE`. Each direct
 link can therefore retransmit missing chunks locally without restarting the
-end-to-end operation.
+end-to-end operation. An ACK terminates at the immediately previous sender; it
+is never forwarded through the tree as the same ACK.
 
 | Field | What it does | Why it is needed |
 |---|---|---|
@@ -615,13 +623,15 @@ For chunk `i`:
 
 ### 1. Ranks request the collective
 
-The four ranks enter the same collective through their runtime. The Host
-Coordinator waits for the complete participant set, then asks the AM to begin
-the operation. No PRISM data packet is sent yet.
+The four ranks enter the same collective through their runtime. In this
+storyboard, `rank0` also hosts the Host Coordinator: it joins locally while the
+runtime carries the other arrivals to the same barrier. Once the participant
+set is complete, the Coordinator asks the AM to begin the operation. No PRISM
+data packet is sent yet.
 
 <figure markdown="span">
-  ![Four ranks arrive at a host-side barrier. The Host Coordinator then sends one BEGIN_OPERATION request to the separate Aggregation Manager while the spine-leaf tree remains inactive.](../../assets/images/protocol/reduce-lifecycle/01-host-collective-request.png){ loading=lazy }
-  <figcaption>The application request reaches the AM through a host API; it is not a PRISM Ethernet frame.</figcaption>
+  ![A blue runtime bus joins rank0 through rank3 without extending beyond rank3. Rank0 hosts the Host Coordinator, which waits for all arrivals and then sends BEGIN_OPERATION to the AM while the switch tree remains inactive.](../../assets/images/protocol/reduce-lifecycle/01-host-collective-request.png){ loading=lazy }
+  <figcaption>The Coordinator badge belongs to <code>rank0</code>. The blue bus and <code>BEGIN_OPERATION</code> are host-runtime communication, not PRISM Ethernet packets.</figcaption>
 </figure>
 
 ### 2. Configure the switch tree
@@ -647,13 +657,14 @@ completion, and retry state belong to this Operation.
 ### 3. Release the ranks from the barrier
 
 The AM returns `StartGrant` only after `S0`, `L0`, and `L1` have all confirmed
-`ACTIVE`. The Host Coordinator then distributes the rank-specific grants. A
-leaf does not send a startup ACK: it has only local knowledge and cannot prove
-that the whole tree is ready.
+`ACTIVE`. The Host Coordinator in `rank0` then publishes the rank-specific
+grants to itself and the other three ranks over the same runtime channel. A leaf
+does not send a startup ACK: it has only local knowledge and cannot prove that
+the whole tree is ready.
 
 <figure markdown="span">
-  ![S0, L0, and L1 are all active. The Aggregation Manager returns START_GRANT to the Host Coordinator, which sends START to all four ranks over the host runtime channel.](../../assets/images/protocol/reduce-lifecycle/03-global-start-grant.png){ loading=lazy }
-  <figcaption>The host-side grant is the global readiness barrier; <code>PM_OP_COL_PROGRESS</code> begins only after DATA or RES traffic exists.</figcaption>
+  ![S0, L0, and L1 are active. The AM returns START_GRANT to the Host Coordinator hosted by rank0, whose blue runtime bus terminates on rank0, rank1, rank2, and rank3 without extending past any rank.](../../assets/images/protocol/reduce-lifecycle/03-global-start-grant.png){ loading=lazy }
+  <figcaption>The host-side grant is the global readiness barrier. The Coordinator is hosted by <code>rank0</code>; it is not a fifth participant.</figcaption>
 </figure>
 
 ### 4. Submit rank contributions
@@ -698,9 +709,14 @@ After both partials are accepted, `S0` computes the final chunk:
 \mathbf{result}[i]=\mathbf{partial}_0[i]+\mathbf{partial}_1[i].
 \]
 
+Safe acceptance of each partial is also a local handoff. `S0` sends one
+`PM_OP_COL_PROGRESS` ACK to `L0` and another to `L1`. After receiving its ACK,
+that leaf may reuse the replay buffer holding the transmitted partial for chunk
+`i`; it does not wait for the final result to reach `rank1`.
+
 <figure markdown="span">
-  ![L0 and L1 send one DATA partial each to S0, which computes the final chunk.](../../assets/images/protocol/reduce-lifecycle/06-root-reduction.png){ loading=lazy }
-  <figcaption>Four rank packets become two partial packets before reaching the aggregation root.</figcaption>
+  ![L0 and L1 send separate DATA partials to S0. S0 returns one local ACK to each leaf, which can then reuse its partial replay buffer, and computes the final chunk.](../../assets/images/protocol/reduce-lifecycle/06-root-reduction.png){ loading=lazy }
+  <figcaption>Each dashed ACK belongs to one leaf-to-S0 DATA transfer; neither ACK comes from <code>rank1</code>.</figcaption>
 </figure>
 
 ### 7. Route the result to `rank1`
@@ -709,13 +725,17 @@ The route at `S0` selects a replication entry toward `L0`; the route at `L0`
 selects `rank1`. `L1` and the other ranks receive no result traffic.
 
 <figure markdown="span">
-  ![The left panel shows PM_OP_COL_RES moving down the spine-leaf tree from S0 to L0 and rank1. The right panel shows PM_OP_COL_PROGRESS acknowledgments returning from rank1 to L0 and from L0 to S0.](../../assets/images/protocol/reduce-lifecycle/07-result-and-acks.png){ loading=lazy }
-  <figcaption>Result packets move toward <code>rank1</code>; each ACK returns only to the immediately previous sender.</figcaption>
+  ![In one spine-leaf topology, a result and its local ACK connect S0 with L0 on Path A, while a separate result and ACK connect L0 with rank1 on Path B. Every arrow touches its source and destination.](../../assets/images/protocol/reduce-lifecycle/07-result-and-acks.png){ loading=lazy }
+  <figcaption>Path A and Path B are independent transfers. <code>ACK B</code> stops at <code>L0</code>; <code>ACK A</code> is a separate response generated by <code>L0</code>.</figcaption>
 </figure>
 
 Ethernet does not tell a sender that the next node accepted a packet. Therefore
-`S0` keeps a replay copy until `L0` acknowledges Path A, and `L0` keeps its own
-copy until `rank1` acknowledges Path B. A missing packet or ACK triggers a retry.
+`S0` keeps replay A until `L0` has safely retained the result and returns
+`ACK A`. `L0` may send that ACK without waiting for `rank1`: it has accepted
+responsibility for Path B and keeps its own replay copy until `rank1` returns
+`ACK B`. An ACK therefore closes one direct transfer and makes the sender's
+bounded replay slot reusable. A missing packet or ACK retries only that link.
+
 A switch suppresses a result it has already accepted on the same local Result
 Path and acknowledges the duplicate again. At the final rank, Protocol 1.0
 requires the endpoint/runtime to deduplicate by Operation handle, Result Path
@@ -724,30 +744,51 @@ exactly-once application delivery.
 
 ### 8. Complete the operation
 
-After all required result-path acknowledgments, heavy chunk buffers may be
-reused, but the operation retains its handle and completion tombstones so that
-late duplicates are still rejected.
+Buffer reclamation is incremental rather than one tree-wide event. `L1` may
+complete after `S0` has acknowledged all of its partials. `S0` completes after
+every final result has been accepted by its configured next hop, `L0`. Because
+`L0` has both roles, it completes only after `S0` has acknowledged all of its
+partials and `rank1` has acknowledged all of its results. The three switches may
+therefore reach `COMPLETE` at different times.
+
+By local completion, heavy aggregation and replay buffers are already reusable.
+The switch still retains the Operation handle, completion/phase state, and
+deduplication tombstones so that late packets are rejected.
 
 <figure markdown="span">
-  ![S0, L0, and L1 each free their local chunk buffers after all required acknowledgments, while Operation and Group state remain installed.](../../assets/images/protocol/reduce-lifecycle/08-operation-complete.png){ loading=lazy }
-  <figcaption><code>COMPLETE</code> reclaims heavy per-chunk storage locally at every switch; it does not free the Operation handle.</figcaption>
+  ![S0, L0, and L1 independently report COMPLETE. Per-chunk buffers are already reusable, while each switch retains its Operation state. The AM observes status through target-specific queries.](../../assets/images/protocol/reduce-lifecycle/08-operation-complete.png){ loading=lazy }
+  <figcaption><code>COMPLETE</code> records that one switch has finished its local obligations; it is not a global result ACK and does not free the Operation handle.</figcaption>
 </figure>
 
-Once every switch reports `COMPLETE`, the AM can report tree-wide completion to
-the Host Coordinator.
+The Host Coordinator calls `wait_operation(...)`; the AM uses authoritative
+`OP_STATUS` responses, optionally accelerated by `OP_COMPLETE_EVENT`, until
+every switch reports `COMPLETE`. The call then returns tree-wide completion to
+the coordinator and retires the old start grants. The single management line in
+the drawing represents separate target-specific status exchanges with `S0`,
+`L0`, and `L1`; `S0` does not summarize its children.
 
 ### 9. Release the Operation state
 
-After completion, the Host Coordinator requests release. The AM sends one
-target-specific `OP_RELEASE` to each switch and waits for every response before
-confirming release to the host side.
+The AM does not release an Operation autonomously. After
+`wait_operation(...)` has returned global completion, the Host Coordinator in
+`rank0` explicitly calls `release_operation(...)`. The AM then sends one
+target-specific `OP_RELEASE` to each switch and waits for every response.
+
+This command is still necessary even though chunk buffers are already reusable:
+it removes the retained Operation handle, completion/phase state, retry and
+deduplication tombstones, and the remaining ownership of the Operation ID. The
+reusable Group topology remains installed.
 
 <figure markdown="span">
-  ![The AM sends separate OP_RELEASE requests addressed to S0, L0, and L1. Each switch frees its local Operation state, while the reusable Group setup remains installed.](../../assets/images/protocol/reduce-lifecycle/09-operation-release.png){ loading=lazy }
-  <figcaption>Release happens independently at <code>S0</code>, <code>L0</code>, and <code>L1</code>; the spine only forwards non-local requests.</figcaption>
+  ![The Host Coordinator hosted by rank0 calls release_operation on the AM. The AM sends separate OP_RELEASE requests addressed to S0, L0, and L1; each switch frees retained Operation state while the Group remains installed.](../../assets/images/protocol/reduce-lifecycle/09-operation-release.png){ loading=lazy }
+  <figcaption>The Coordinator triggers release. <code>S0</code> consumes its request and forwards those for <code>L0</code>/<code>L1</code> unchanged; the green <code>RELEASED</code> return occurs only after every response.</figcaption>
 </figure>
 
-The same Operation ID may then be reused only with a higher generation.
+Only after every `OP_RELEASE_RESPONSE` does the AM return `RELEASED` to the Host
+Coordinator. The same Operation ID may then be reused only with a higher
+generation, and the Coordinator resolves the collective call for every rank as
+`DONE`. A failure is propagated to all ranks as the same terminal `ERROR`.
+These host outcomes use the runtime channel, not `PM_*` Ethernet packets.
 
 ### How `ALLREDUCE` differs
 
@@ -766,9 +807,11 @@ FREE -> PREPARED -> ACTIVE -> COMPLETE -> RELEASING -> FREE
 `PREPARED` or `ACTIVE` may instead enter `ABORTED`, but stale-generation and
 completion tombstones remain until release.
 
-An operation becomes `COMPLETE` only after every required chunk and result
-replica has been acknowledged and no retry remains outstanding. Completion
-events are useful notifications, while `OP_STATUS` remains authoritative.
+At one switch, an operation becomes `COMPLETE` only after every local
+aggregation output and every locally required result replica for all chunks has
+been acknowledged, with no retry outstanding. A leaf without a result role has
+no result ACK to await. Completion events are useful notifications, while
+`OP_STATUS` remains authoritative.
 
 A packet or transaction is invalid when, for example, it has an unsupported
 version/opcode, malformed TLV, stale session or generation, wrong contributor

@@ -13,9 +13,14 @@ and the leaf's actual receive-window admission. The coordinator and AM may be
 objects in one process or separated by an RPC proxy without changing Protocol
 1.0.
 
-The package models rank rendezvous and grant creation, but deliberately contains
-no coordinator RPC, coordinator-to-rank transport, raw-socket adapter, or other
-deployment-specific network I/O.
+After activation, `wait_operation()` observes tree-wide `COMPLETE` and retires
+the grants; `release_operation()` waits for acknowledged cleanup on every
+switch. The embedding runtime can then resolve every rank call as DONE, or
+deliver the shared terminal error on failure.
+
+The package models rank rendezvous, result membership, grants, completion, and
+release, but deliberately contains no coordinator RPC, coordinator-to-rank
+transport, raw-socket adapter, or other deployment-specific network I/O.
 
 Run the tests with:
 
