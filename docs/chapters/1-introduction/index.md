@@ -1,6 +1,6 @@
 # PRISM
 
-PRISM (**Precision-aware Reduction In-Switch Module**) is an open-source RTL research prototype for “in-network collective” (INC) operations on FPGA-based packet-processing datapaths. The name evokes a prism refracting light into multiple paths, much like the result-distribution behavior explored during the broadcast phase. The project studies how reduction-oriented collective operations, such as `REDUCE_SUM`[^mpi-reduce] aggregation, can be partially offloaded from the host accelerator (CPU/GPU) communication stack into the network data plane itself. In this sense, PRISM is inspired by the same broad direction as Mellanox/NVIDIA SHARP[^sharp], which demonstrated that collective reduction processing can be moved into network switching hardware to reduce communication overhead and improve collective latency.
+PRISM (**Precision-aware Reduction In-Switch Module**) is an open-source RTL research prototype for “in-network collective” (INC) operations on FPGA-based packet-processing datapaths. The project studies how reduction-oriented collective operations, such as `REDUCE_SUM`[^mpi-reduce] aggregation, can be partially offloaded from the host accelerator (CPU/GPU) communication stack into the network data plane itself. In this sense, PRISM is inspired by the same broad direction as Mellanox/NVIDIA SHARP[^sharp], which demonstrated that collective reduction processing can be moved into network switching hardware to reduce communication overhead and improve collective latency.
 
 !!! abstract "Objective"
 

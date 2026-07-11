@@ -5,9 +5,7 @@ title: PRISM
 # PRISM
 
 PRISM (**Precision-aware Reduction In-Switch Module**) è un prototipo RTL open
-source per lo studio delle operazioni collettive in-network (INC) su FPGA. Il
-nome richiama un prisma che rifrange la luce lungo più direzioni, analogamente
-alla distribuzione dei risultati nella fase di broadcast. Il progetto studia
+source per lo studio delle operazioni collettive in-network (INC) su FPGA. Il progetto studia
 come riduzioni collettive quali `REDUCE_SUM`[^mpi-reduce] possano essere
 parzialmente trasferite dallo stack di comunicazione dell'acceleratore host
 (CPU/GPU) al data plane della rete. PRISM si colloca quindi nella direzione
