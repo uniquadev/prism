@@ -113,6 +113,19 @@ Each switch stores only its local part of a logical group. At a leaf, Contributo
 IDs normally identify ranks. At an internal node, they identify child subtrees.
 Contributor IDs are dense and bound to an expected ingress port and source MAC.
 
+### Node roles and the single-switch case
+
+`Node Role` describes the position of one switch in the **logical collective
+tree**. It does not change the switch's physical Ethernet role or the forwarding
+policy for non-local frames.
+
+| Role | Local contributors | Parent | Collective behavior |
+|---|---|---|---|
+| `LEAF` | Directly attached ranks | Required | Reduces local contributions and emits one partial DATA stream toward its parent |
+| `INTERNAL` | Child subtrees | Required | Reduces child partials and emits one new partial DATA stream toward its parent |
+| `ROOT` | Child subtrees | None | Completes the reduction and starts result distribution |
+| `SINGLE` | Directly attached ranks | None | Completes the reduction locally and starts result distribution without emitting an upstream partial |
+
 ---
 
 ## Chunking model
@@ -1264,17 +1277,35 @@ The `FEATURE_MASK` and `SUPPORTED_RELIABILITY_FEATURES` bit assignments are:
 Wire-format and accumulator values are registry assignments, not support
 claims. INT8 payload elements are signed two's-complement bytes; FP16 and FP32
 carry IEEE 754 binary16 and binary32 bit patterns; BF16 carries one sign bit,
-eight exponent bits, and seven fraction bits. Multibyte bit patterns are sent
-most-significant byte first.
+eight exponent bits, and seven fraction bits.
 
 A node supports arithmetic only through an explicitly advertised
-`(input_format, accumulator_mode, output_format)` tuple. The present RTL does
-not yet freeze the required rounding, integer-overflow, NaN, infinity,
-subnormal, or signed-zero behavior, so no tuple is claimed as implemented RTL
-semantics in this pre-implementation draft. The FP32 / `DETERMINISTIC_FP32` /
-FP32 tuple in the host reference capability is a wire-encoding test fixture,
-not a hardware-support claim. When implemented, `DETERMINISTIC_FP32` uses
-ascending local Contributor ID order.
+`(input_format, accumulator_mode, output_format)` tuple. Protocol 1.0 freezes
+one baseline tuple for the `SUM` operator:
+
+\[
+(\mathrm{FP32},\ \mathrm{DETERMINISTIC\_FP32},\ \mathrm{FP32}).
+\]
+
+An implementation advertising this tuple obeys the following normative
+semantics:
+
+- each input and output is an IEEE 754 `binary32` bit pattern;
+- contributors are folded in strictly ascending local Contributor ID order,
+  starting with the value from the lowest ID; no zero seed is inserted;
+- every binary addition is performed in `binary32` and rounded immediately
+  using round-to-nearest, ties-to-even; fused or wider intermediate arithmetic
+  is not permitted;
+- subnormal inputs and results use gradual underflow and are not flushed to
+  zero;
+- finite overflow produces the correctly signed infinity;
+- infinity follows IEEE 754 addition, including an invalid `+infinity +
+  -infinity` result;
+- any NaN input, signaling NaN, or invalid addition produces the canonical
+  quiet NaN bit pattern `0x7FC00000`; no NaN payload is propagated;
+- same-sign zero addition preserves that sign; an exact zero sum of opposite
+  signs is `+0` under the selected rounding mode;
+- arithmetic exception flags and traps are not transported by Protocol 1.0.
 
 The exact accumulator codes describe node-local finite accumulation. They do
 not provide global tree-independent exactness when a partial is serialized as

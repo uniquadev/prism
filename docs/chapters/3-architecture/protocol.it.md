@@ -118,6 +118,19 @@ una foglia, i Contributor ID identificano normalmente i rank; in un nodo interno
 identificano i sottoalberi figli. I Contributor ID sono densi e associati a una
 porta di ingresso e a un MAC sorgente attesi.
 
+### Ruoli dei nodi e caso con un solo switch
+
+`Node Role` descrive la posizione di uno switch nell'**albero logico della
+collettiva**. Non modifica il ruolo Ethernet fisico dello switch né la politica
+di inoltro dei frame non locali.
+
+| Ruolo | Contributori locali | Parent | Comportamento nella collettiva |
+|---|---|---|---|
+| `LEAF` | Rank collegati direttamente | Obbligatorio | Riduce i contributi locali ed emette uno stream DATA parziale verso il parent |
+| `INTERNAL` | Sottoalberi figli | Obbligatorio | Riduce i parziali dei figli ed emette un nuovo stream DATA parziale verso il parent |
+| `ROOT` | Sottoalberi figli | Assente | Completa la riduzione e avvia la distribuzione del risultato |
+| `SINGLE` | Rank collegati direttamente | Assente | Completa localmente la riduzione e avvia la distribuzione del risultato senza emettere un parziale upstream |
+
 ---
 
 ## Suddivisione in chunk
@@ -1312,18 +1325,35 @@ I valori dei formati wire e degli accumulatori sono assegnazioni di registro,
 non dichiarazioni di supporto. Gli elementi INT8 sono byte con segno in
 complemento a due; FP16 e FP32 trasportano i bit IEEE 754 binary16 e binary32;
 BF16 trasporta un bit di segno, otto bit di esponente e sette bit di frazione.
-I pattern su più byte sono inviati dal byte più significativo al meno
-significativo.
 
 Un nodo supporta l'aritmetica soltanto tramite una tupla dichiarata
-esplicitamente `(input_format, accumulator_mode, output_format)`. L'RTL attuale
-non fissa ancora il comportamento richiesto per arrotondamento, overflow intero,
-NaN, infinito, subnormal e zero con segno: questa bozza pre-implementazione non
-dichiara quindi alcuna tupla come semantica RTL implementata. La tupla FP32 /
-`DETERMINISTIC_FP32` / FP32 nella capability host di riferimento serve a
-verificare la codifica wire, non dichiara supporto hardware. Quando sarà
-implementato, `DETERMINISTIC_FP32` userà l'ordine crescente dei Contributor ID
-locali.
+esplicitamente `(input_format, accumulator_mode, output_format)`. Il Protocollo
+1.0 congela una tupla di riferimento per l'operatore `SUM`:
+
+\[
+(\mathrm{FP32},\ \mathrm{DETERMINISTIC\_FP32},\ \mathrm{FP32}).
+\]
+
+Un'implementazione che dichiara questa tupla rispetta le seguenti semantiche
+normative:
+
+- ogni input e output è un pattern di bit IEEE 754 `binary32`;
+- i contributori vengono combinati in ordine strettamente crescente di
+  Contributor ID locale, iniziando dal valore con ID minore; non viene inserito
+  uno zero iniziale;
+- ogni addizione binaria viene eseguita in `binary32` e arrotondata
+  immediatamente al più vicino con spareggio al pari; non sono ammessi
+  intermedi fusi o a precisione maggiore;
+- input e risultati subnormal usano l'underflow graduale e non vengono forzati
+  a zero;
+- l'overflow di valori finiti produce l'infinito con il segno corretto;
+- gli infiniti seguono l'addizione IEEE 754, incluso il risultato non valido di
+  `+infinito + -infinito`;
+- qualunque input NaN, signaling NaN o addizione non valida produce il quiet NaN
+  canonico con pattern `0x7FC00000`; il payload del NaN non viene propagato;
+- la somma di zeri con lo stesso segno conserva quel segno; una somma esattamente
+  nulla di operandi con segno opposto produce `+0` con l'arrotondamento scelto;
+- il Protocollo 1.0 non trasporta flag di eccezione aritmetica né trap.
 
 I codici degli accumulatori esatti descrivono un accumulo finito locale al nodo.
 Non garantiscono esattezza globale indipendente dall'albero quando una somma
