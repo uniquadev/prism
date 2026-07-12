@@ -6,15 +6,13 @@ collegamento diretto. Le revisioni future dovranno estendere questi contratti
 senza indebolire la sicurezza delle generazioni né interpretare una perdita
 Ethernet come successo.
 
-## Parziali esatti in un albero
+## Formati partial exact e Kulisch
 
-L'estensione aritmetica principale è un formato senza perdita per lo stato
-parziale dell'accumulatore. Serializzare in FP32 un accumulatore locale esatto
-introduce un arrotondamento a ogni livello e non garantisce una riduzione globale
-esatta e indipendente dall'albero. Un futuro profilo `EXACT_PARTIAL_WIRE` dovrà
-definire ampiezza, normalizzazione, indicatori dei valori speciali, overflow,
-regole di fusione, geometria del payload e negoziazione delle funzionalità prima
-di dichiarare una tupla esatta multilivello.
+Il Protocollo 1.0 assegna soltanto parziali FP32. Un futuro formato exact-FP32 o
+Kulisch dovrà definire layout in byte, regole di fusione, valori speciali,
+overflow e geometria del payload prima di ricevere un valore numerico Partial
+Wire Format. Il supporto verrà dichiarato nella tupla aritmetica a quattro
+campi, non tramite un bit di feature separato.
 
 ## Memoria di completamento scalabile
 

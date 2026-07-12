@@ -9,7 +9,9 @@ from prism_protocol.constants import (
     MAX_CHUNKS,
     AccumulatorMode,
     CollectiveSemantic,
+    FeatureFlag,
     OperationState,
+    PartialWireFormat,
     ReductionOperator,
     Status,
     TlvType,
@@ -46,6 +48,7 @@ def operation_descriptor(*, result_role: bool = False, requested_slots: int = 4,
         ReductionOperator.SUM,
         WireFormat.FP32,
         AccumulatorMode.DETERMINISTIC_FP32,
+        PartialWireFormat.FP32,
         WireFormat.FP32,
         element_count=chunks,
         elements_per_chunk=1,
@@ -60,6 +63,11 @@ def operation_descriptor(*, result_role: bool = False, requested_slots: int = 4,
 
 
 class BitmapAndAdmissionTests(unittest.TestCase):
+    def test_reserved_feature_bits_are_rejected(self) -> None:
+        advertised = Capabilities.reference(feature_flags=FeatureFlag(0x80))
+        with self.assertRaisesRegex(ValueError, "reserved feature bits"):
+            Capabilities.from_tlv(advertised.device_boot_id, advertised.to_tlv())
+
     def test_resource_allocation_round_trip(self) -> None:
         allocation = ResourceAllocation(
             operation_slots=1,

@@ -177,25 +177,21 @@ La lunghezza del payload di un pacchetto trasmesso localmente è
 \mathrm{bytes\_per\_element}(\mathrm{packet\ wire\ format}).
 \]
 
-| Formati usati dall'albero | Numero massimo di elementi per chunk |
-|---|---:|
-| Input INT8, output INT8 | 1474 |
-| Input FP32, output FP32 | 368 |
-| Input INT8, output FP32 | 368 |
+Poiché FP32 è l'unico formato partial assegnato, il Protocollo 1.0 limita ogni
+operazione a `floor(1474/4) = 368` elementi per chunk, anche quando input e output
+degli endpoint sono più stretti. La stessa geometria può così essere installata
+su ogni nodo. Per esempio, 1000 elementi formano chunk da 368, 368 e 264 elementi.
+Nessun elemento viene diviso tra due pacchetti. L'AM seleziona una sola tupla
+aritmetica per l'intero albero e impone lo stesso Partial Wire Format su ogni
+arco di aggregazione. L'eventuale padding minimo Ethernet non viene interpretato
+come dato del vettore.
 
-Per esempio, 1000 elementi FP32 formano chunk da 368, 368 e 264 elementi.
-Nessun elemento FP16, BF16 o FP32 viene diviso tra due pacchetti. L'AM impone
-inoltre `child.output_format == parent.input_format` su ogni arco di
-aggregazione. L'eventuale padding minimo Ethernet non viene interpretato come
-dato del vettore.
-
-`PM_OP_COL_RES` non contiene un campo che dichiari il formato del singolo
-pacchetto. Il Protocollo 1.0 richiede quindi un unico `output_format` per tutto
-l'albero, uguale al formato del risultato prodotto dalla radice. Una foglia può
-convertire l'input prima di emettere il primo parziale, per esempio da INT8 a
-FP32, ma i livelli successivi non possono introdurre un'altra conversione wire.
-Gli alberi che richiedono formati intermedi e finali diversi non sono supportati
-nella versione 1.0.
+DATA e RES non contengono un tag di formato per pacchetto. La codifica è
+selezionata dal descrittore Operation installato: il DATA da endpoint a foglia
+usa Input Wire Format, il DATA tra switch usa Partial Wire Format e RES usa
+Output Wire Format. Il Protocollo 1.0 impone una sola tupla aritmetica per
+l'intero albero, così ogni ricevitore decodifica il payload dal proprio ruolo e
+dal Contributor binding configurato.
 
 I chunk possono arrivare in ordine diverso all'interno della finestra di
 ricezione ammessa. È il Chunk Index, non l'ordine di arrivo, a selezionare lo
@@ -517,7 +513,7 @@ come sorgente e il Parent MAC dell'azione upstream come destinazione.
 | Contributor ID | Seleziona il contributore atteso sul collegamento corrente e consente di rilevare contributi duplicati o provenienti dalla sorgente sbagliata |
 | Chunk Index | Colloca il payload nel corretto intervallo del vettore e seleziona lo stato di riduzione temporaneo, indipendentemente dall'ordine di arrivo |
 | Flags | Indica ritrasmissione, richiesta di ACK e ultimo chunk |
-| Payload | Contiene gli elementi che questo nodo deve accumulare per il chunk indicato |
+| Payload | Contiene elementi in Input Wire Format se il mittente è un endpoint, oppure in Partial Wire Format se il mittente è uno switch figlio |
 
 ### `PM_OP_COL_RES`
 
@@ -901,10 +897,12 @@ Il primo prototipo RTL si concentra su `REDUCE` e `ALLREDUCE`.
 
 ## Formati wire e modalità di accumulo
 
-Un **formato wire** descrive come gli elementi sono codificati nei pacchetti DATA
-o RES. Una **modalità di accumulo** descrive come uno switch li combina
-internamente. Il formato di uscita è indipendente: un input INT8 può quindi
-essere accumulato o emesso in una rappresentazione più ampia.
+Un **Input Wire Format** descrive i contributi degli endpoint, un **Partial Wire
+Format** descrive il DATA emesso da uno switch verso il parent e un **Output
+Wire Format** descrive gli elementi RES finali. Una **modalità di accumulo**
+descrive come uno switch combina i valori internamente. Rendere esplicite tutte
+e quattro le scelte rende selezionabile e interrogabile ogni confine di
+conversione.
 
 | Valore | Formato wire | Byte per elemento |
 |---:|---|---:|
@@ -913,6 +911,22 @@ essere accumulato o emesso in una rappresentazione più ampia.
 | `0x03` | `BF16` | 2 |
 | `0x04` | `FP32` | 4 |
 
+Il Protocollo 1.0 assegna soltanto FP32 ai parziali tra switch:
+
+| Valore | Partial Wire Format | Byte per elemento |
+|---:|---|---:|
+| `0x00` | `INVALID` | — |
+| `0x04` | `FP32` | 4 |
+
+La scelta è intenzionalmente più restrittiva del registro dei formati endpoint:
+impedisce che l'albero restringa i parziali a INT8, FP16 o BF16 a ogni salto.
+I parziali exact-FP32 e Kulisch non sono assegnati in 1.0 perché layout in byte,
+regole di fusione, valori speciali e overflow non sono ancora fissati. Il campo
+Partial Wire Format consente a una revisione successiva di aggiungerli senza
+modificare il descrittore Operation. FP32 conserva il valore `0x04` del normale
+registro Wire Format, così la stessa codifica del payload non ha due codici
+numerici diversi.
+
 Le assegnazioni delle modalità di accumulo sono:
 
 | Valore | Modalità di accumulo |
@@ -920,20 +934,16 @@ Le assegnazioni delle modalità di accumulo sono:
 | `0x01` | `NATIVE` |
 | `0x02` | `FP32` |
 | `0x03` | `DETERMINISTIC_FP32` |
-| `0x04` | `EXACT_FP16_MAG40` |
-| `0x05` | `EXACT_BF16_MAG261` |
-| `0x06` | `EXACT_FP32_MAG277` |
 
 L'assegnazione di un codice non implica il supporto RTL: la tupla completa
-`(input, accumulator, output)` deve essere dichiarata e accettata da
+`(input, accumulator, partial, output)` deve essere dichiarata e accettata da
 `OP_PREPARE`.
 
 `DETERMINISTIC_FP32` combina i contributori in ordine crescente di Contributor
-ID locale. L'accumulo esatto è locale a un nodo. Serializzare come FP32 una somma
-parziale esatta localmente introduce un arrotondamento su quel collegamento;
-l'esattezza globale indipendente dalla forma dell'albero richiede quindi una
-rappresentazione lossless delle somme parziali che il Protocollo 1.0 non definisce
-ancora. La derivazione numerica è descritta in
+ID locale. Un accumulatore esatto non viene intenzionalmente assegnato nel
+Protocollo 1.0: con un partial FP32 arrotonderebbe comunque a ogni confine tra
+switch, mentre un profilo esatto per l'intero albero richiede anche una nuova
+codifica partial. La derivazione numerica è descritta in
 [Riproducibilità in virgola mobile](../1-introduction/reproducibility.md).
 
 ---
@@ -1119,9 +1129,10 @@ Il valore `OPERATION_DESCRIPTOR` da 40 byte è:
 | 1 | 8 | Reduction Operator |
 | 2 | 8 | Input Wire Format |
 | 3 | 8 | Accumulator Mode |
-| 4 | 8 | Output Wire Format |
-| 5 | 8 | Flag; il bit 0 è Result Delivery Role |
-| 6 | 16 | Riservato, a zero |
+| 4 | 8 | Partial Wire Format |
+| 5 | 8 | Output Wire Format |
+| 6 | 8 | Flag; il bit 0 è Result Delivery Role |
+| 7 | 8 | Riservato, a zero |
 | 8 | 32 | Element Count |
 | 12 | 16 | Elements per Chunk |
 | 14 | 16 | Requested Window, in chunk |
@@ -1208,8 +1219,9 @@ riserva. Soltanto `GROUP_STAGE` e `OP_PREPARE` riservano risorse.
 I valori delle semantiche, degli operatori e dei profili di sicurezza supportati
 sono bitmask in cui il bit `n` corrisponde al valore numerico `n` del relativo
 registro. Gli elementi delle tuple aritmetiche codificano il formato di input
-nei bit 63:56, la modalità dell'accumulatore nei bit 55:48, il formato di output
-nei bit 47:40 e zero nei bit 39:0. `SUPPORTED_ARITHMETIC_TUPLE` può quindi
+nei bit 63:56, la modalità dell'accumulatore nei bit 55:48, il formato partial
+wire nei bit 47:40, il formato di output nei bit 39:32 e zero nei bit 31:0.
+`SUPPORTED_ARITHMETIC_TUPLE` può quindi
 comparire più volte; le altre chiavi capability compaiono una volta.
 
 <p class="protocol-registry__heading">Chiavi delle risorse dinamiche</p>
@@ -1315,7 +1327,10 @@ Le assegnazioni dei bit di `FEATURE_MASK` e
 | `0x0010` | `MANAGEMENT_AUTH` |
 | `0x0020` | `MACSEC_MANAGEMENT_DOMAIN` |
 | `0x0040` | `EXTERNAL_BITMAP_MEMORY` |
-| `0x0080` | `EXACT_PARTIAL_WIRE` |
+
+Il bit di feature `0x0080` è riservato e deve essere trasmesso a zero nel
+Protocollo 1.0. Un futuro formato partial verrà negoziato tramite
+`SUPPORTED_ARITHMETIC_TUPLE`; non richiederà un bit di feature indipendente.
 
 </details>
 
@@ -1327,11 +1342,13 @@ complemento a due; FP16 e FP32 trasportano i bit IEEE 754 binary16 e binary32;
 BF16 trasporta un bit di segno, otto bit di esponente e sette bit di frazione.
 
 Un nodo supporta l'aritmetica soltanto tramite una tupla dichiarata
-esplicitamente `(input_format, accumulator_mode, output_format)`. Il Protocollo
-1.0 congela una tupla di riferimento per l'operatore `SUM`:
+esplicitamente `(input_format, accumulator_mode, partial_format,
+output_format)`. `OP_PREPARE` seleziona esattamente una tupla dichiarata e l'AM
+impone la stessa tupla su ogni switch dell'albero. Il Protocollo 1.0 congela una
+tupla di riferimento per l'operatore `SUM`:
 
 \[
-(\mathrm{FP32},\ \mathrm{DETERMINISTIC\_FP32},\ \mathrm{FP32}).
+(\mathrm{FP32},\ \mathrm{DETERMINISTIC\_FP32},\ \mathrm{FP32},\ \mathrm{FP32}).
 \]
 
 Un'implementazione che dichiara questa tupla rispetta le seguenti semantiche
@@ -1355,10 +1372,9 @@ normative:
   nulla di operandi con segno opposto produce `+0` con l'arrotondamento scelto;
 - il Protocollo 1.0 non trasporta flag di eccezione aritmetica né trap.
 
-I codici degli accumulatori esatti descrivono un accumulo finito locale al nodo.
-Non garantiscono esattezza globale indipendente dall'albero quando una somma
-parziale viene serializzata in FP32; per questo serve `EXACT_PARTIAL_WIRE` o un
-altro formato di fusione senza perdita.
+L'aritmetica exact e Kulisch non deve essere dichiarata nel Protocollo 1.0. Una
+revisione successiva dovrà assegnare sia Accumulator Mode sia Partial Wire Format
+e fissare le relative semantiche di fusione.
 
 <details class="protocol-registry" markdown="1">
 <summary>Assegnazioni dei profili di sicurezza</summary>

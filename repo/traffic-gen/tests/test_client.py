@@ -12,6 +12,7 @@ from prism_protocol.constants import (
     GroupState,
     NodeRole,
     OperationState,
+    PartialWireFormat,
     ReductionOperator,
     Status,
     WireFormat,
@@ -52,6 +53,7 @@ def operation_descriptor() -> OperationDescriptor:
         reduction_operator=ReductionOperator.SUM,
         input_format=WireFormat.FP32,
         accumulator_mode=AccumulatorMode.DETERMINISTIC_FP32,
+        partial_format=PartialWireFormat.FP32,
         output_format=WireFormat.FP32,
         element_count=16,
         elements_per_chunk=4,
@@ -180,11 +182,11 @@ class ManagerLifecycleTests(unittest.TestCase):
                 parent_edges={"l0": "s0"},
             )
 
-    def test_prepare_requires_one_tree_wide_result_format(self) -> None:
+    def test_prepare_requires_one_tree_wide_arithmetic_tuple(self) -> None:
         descriptors = {name: operation_descriptor() for name in self.switches}
         descriptors["s0"] = replace(descriptors["s0"], output_format=WireFormat.FP16)
 
-        with self.assertRaisesRegex(ValueError, "tree-wide result/output wire format"):
+        with self.assertRaisesRegex(ValueError, "tree-wide arithmetic tuple"):
             self.manager.prepare_operation(
                 self.group,
                 14,

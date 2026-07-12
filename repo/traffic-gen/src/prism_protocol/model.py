@@ -15,6 +15,7 @@ from typing import Callable, Iterable
 
 from .constants import (
     BYTES_PER_ELEMENT,
+    PARTIAL_BYTES_PER_ELEMENT,
     CHUNK_PAYLOAD_BYTES,
     MAX_BITMAP_BYTES,
     MAX_CHUNKS,
@@ -28,6 +29,7 @@ from .constants import (
     NextHopType,
     NodeRole,
     OperationState,
+    PartialWireFormat,
     ReductionOperator,
     ResourceKey,
     SecurityProfile,
@@ -47,7 +49,7 @@ _UPSTREAM_ACTION = struct.Struct("!BBHH6sI")
 _NEXT_HOP = struct.Struct("!HHBB6s")
 _REPLICATION_HEADER = struct.Struct("!HHI")
 _RESULT_ROUTE = struct.Struct("!3s3sH")
-_OPERATION_PREFIX = struct.Struct("!BBBBBBH")
+_OPERATION_PREFIX = struct.Struct("!BBBBBBBB")
 _OPERATION_GEOMETRY = struct.Struct("!IHHII")
 _OPERATION_RESOURCES = struct.Struct("!HHBBH")
 _OPERATION_CHUNKS = struct.Struct("!IHH")
@@ -69,18 +71,27 @@ def _mac(value: bytes) -> bytes:
 class ArithmeticTuple:
     input_format: WireFormat
     accumulator_mode: AccumulatorMode
+    partial_format: PartialWireFormat
     output_format: WireFormat
 
     def encode(self) -> int:
         return (
             int(self.input_format) << 56
             | int(self.accumulator_mode) << 48
-            | int(self.output_format) << 40
+            | int(self.partial_format) << 40
+            | int(self.output_format) << 32
         )
 
     @classmethod
     def decode(cls, value: int) -> "ArithmeticTuple":
-        return cls(WireFormat((value >> 56) & 0xFF), AccumulatorMode((value >> 48) & 0xFF), WireFormat((value >> 40) & 0xFF))
+        if value & 0xFFFFFFFF:
+            raise ValueError("non-zero arithmetic tuple reserved bits")
+        return cls(
+            WireFormat((value >> 56) & 0xFF),
+            AccumulatorMode((value >> 48) & 0xFF),
+            PartialWireFormat((value >> 40) & 0xFF),
+            WireFormat((value >> 32) & 0xFF),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +303,7 @@ class OperationDescriptor:
     reduction_operator: ReductionOperator
     input_format: WireFormat
     accumulator_mode: AccumulatorMode
+    partial_format: PartialWireFormat
     output_format: WireFormat
     element_count: int
     elements_per_chunk: int
@@ -309,13 +321,15 @@ class OperationDescriptor:
 
     @property
     def arithmetic_tuple(self) -> ArithmeticTuple:
-        return ArithmeticTuple(self.input_format, self.accumulator_mode, self.output_format)
+        return ArithmeticTuple(self.input_format, self.accumulator_mode, self.partial_format, self.output_format)
 
     def validate(self) -> None:
         if self.semantic == CollectiveSemantic.INVALID or self.reduction_operator == ReductionOperator.INVALID:
             raise ValueError("invalid collective semantic or operator")
         if self.input_format not in BYTES_PER_ELEMENT or self.output_format not in BYTES_PER_ELEMENT:
             raise ValueError("invalid input/output format")
+        if self.partial_format not in PARTIAL_BYTES_PER_ELEMENT:
+            raise ValueError("invalid partial wire format")
         if self.accumulator_mode == AccumulatorMode.INVALID:
             raise ValueError("invalid accumulator mode")
         if self.element_count <= 0 or not 0 < self.elements_per_chunk < (1 << 16):
@@ -329,7 +343,11 @@ class OperationDescriptor:
         if self.timeout_ms <= 0 or self.timeout_ms >= (1 << 32):
             raise ValueError("invalid timeout")
         count = self.expected_chunks
-        max_element_bytes = max(BYTES_PER_ELEMENT[self.input_format], BYTES_PER_ELEMENT[self.output_format])
+        max_element_bytes = max(
+            BYTES_PER_ELEMENT[self.input_format],
+            PARTIAL_BYTES_PER_ELEMENT[self.partial_format],
+            BYTES_PER_ELEMENT[self.output_format],
+        )
         if self.elements_per_chunk * max_element_bytes > CHUNK_PAYLOAD_BYTES:
             raise ValueError("chunk geometry exceeds PM_CHUNK_PAYLOAD_BYTES")
         previous_last = -1
@@ -356,6 +374,7 @@ class OperationDescriptor:
                     int(self.reduction_operator),
                     int(self.input_format),
                     int(self.accumulator_mode),
+                    int(self.partial_format),
                     int(self.output_format),
                     flags,
                     0,
@@ -382,7 +401,7 @@ class OperationDescriptor:
     def unpack(cls, value: bytes, result_routes: Iterable[ResultRoute] = ()) -> "OperationDescriptor":
         if len(value) != 40:
             raise ValueError("operation descriptor must be 40 bytes")
-        semantic, operator, input_format, accumulator, output_format, flags, reserved0 = _OPERATION_PREFIX.unpack_from(value, 0)
+        semantic, operator, input_format, accumulator, partial_format, output_format, flags, reserved0 = _OPERATION_PREFIX.unpack_from(value, 0)
         element_count, elements_per_chunk, window, max_terms, timeout_ms = _OPERATION_GEOMETRY.unpack_from(value, 8)
         replay_slots, route_count, result_role, reserved1, reserved2 = _OPERATION_RESOURCES.unpack_from(value, 24)
         encoded_chunks, retry_limit, reserved3 = _OPERATION_CHUNKS.unpack_from(value, 32)
@@ -396,6 +415,7 @@ class OperationDescriptor:
             ReductionOperator(operator),
             WireFormat(input_format),
             AccumulatorMode(accumulator),
+            PartialWireFormat(partial_format),
             WireFormat(output_format),
             element_count,
             elements_per_chunk,
@@ -550,7 +570,7 @@ class Capabilities:
             max_selective_ack_window=1024,
             collective_semantics=frozenset({CollectiveSemantic.REDUCE, CollectiveSemantic.ALLREDUCE}),
             reduction_operators=frozenset({ReductionOperator.SUM}),
-            arithmetic_tuples=frozenset({ArithmeticTuple(WireFormat.FP32, AccumulatorMode.DETERMINISTIC_FP32, WireFormat.FP32)}),
+            arithmetic_tuples=frozenset({ArithmeticTuple(WireFormat.FP32, AccumulatorMode.DETERMINISTIC_FP32, PartialWireFormat.FP32, WireFormat.FP32)}),
         )
         values.update(overrides)
         return cls(**values)
@@ -652,9 +672,13 @@ class Capabilities:
         security = frozenset(
             value for value in SecurityProfile if values[CapabilityKey.SUPPORTED_SECURITY_PROFILES] & (1 << int(value))
         )
+        known_feature_mask = sum(int(value) for value in FeatureFlag)
+        feature_mask = values[CapabilityKey.SUPPORTED_RELIABILITY_FEATURES]
+        if feature_mask & ~known_feature_mask:
+            raise ValueError("capabilities contain reserved feature bits")
         return cls(
             device_boot_id=device_boot_id,
-            feature_flags=FeatureFlag(values[CapabilityKey.SUPPORTED_RELIABILITY_FEATURES]),
+            feature_flags=FeatureFlag(feature_mask),
             max_sessions=values[CapabilityKey.MAX_SESSIONS],
             max_installed_groups=values[CapabilityKey.MAX_INSTALLED_GROUPS],
             max_prepared_operations=values[CapabilityKey.MAX_PREPARED_OPERATIONS],

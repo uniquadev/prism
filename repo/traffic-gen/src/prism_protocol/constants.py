@@ -178,7 +178,6 @@ class FeatureFlag(IntFlag):
     MANAGEMENT_AUTH = 1 << 4
     MACSEC_MANAGEMENT_DOMAIN = 1 << 5
     EXTERNAL_BITMAP_MEMORY = 1 << 6
-    EXACT_PARTIAL_WIRE = 1 << 7
 
 
 class SecurityProfile(IntEnum):
@@ -229,14 +228,27 @@ BYTES_PER_ELEMENT: dict[WireFormat, int] = {
 }
 
 
+class PartialWireFormat(IntEnum):
+    """Encoding used by PM_OP_COL_DATA between aggregation switches.
+
+    Protocol 1.0 assigns only FP32. Exact and Kulisch encodings require a
+    separately frozen layout before they can receive numeric assignments.
+    """
+
+    INVALID = 0x00
+    FP32 = 0x04
+
+
+PARTIAL_BYTES_PER_ELEMENT: dict[PartialWireFormat, int] = {
+    PartialWireFormat.FP32: 4,
+}
+
+
 class AccumulatorMode(IntEnum):
     INVALID = 0x00
     NATIVE = 0x01
     FP32 = 0x02
     DETERMINISTIC_FP32 = 0x03
-    EXACT_FP16_MAG40 = 0x04
-    EXACT_BF16_MAG261 = 0x05
-    EXACT_FP32_MAG277 = 0x06
 
 
 class SessionState(IntEnum):
@@ -493,6 +505,7 @@ def assert_unique_enum_values() -> None:
         CollectiveSemantic,
         ReductionOperator,
         WireFormat,
+        PartialWireFormat,
         AccumulatorMode,
         TlvType,
         CapabilityKey,

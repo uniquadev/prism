@@ -11,6 +11,7 @@ from typing import Iterable
 
 from .constants import (
     BYTES_PER_ELEMENT,
+    PARTIAL_BYTES_PER_ELEMENT,
     CHUNK_PAYLOAD_BYTES,
     COMMAND_TLV_SCHEMAS,
     CONTROL_HEADER_BYTES,
@@ -23,6 +24,7 @@ from .constants import (
     ControlFlag,
     DataFlag,
     Opcode,
+    PartialWireFormat,
     ProgressFlag,
     ProgressPeerKind,
     ProgressReason,
@@ -632,10 +634,14 @@ def expected_payload_bytes(
     element_count: int,
     elements_per_chunk: int,
     chunk_index: int,
-    wire_format: WireFormat,
+    wire_format: WireFormat | PartialWireFormat,
 ) -> int:
     try:
-        element_bytes = BYTES_PER_ELEMENT[wire_format]
+        element_bytes = (
+            PARTIAL_BYTES_PER_ELEMENT[wire_format]
+            if isinstance(wire_format, PartialWireFormat)
+            else BYTES_PER_ELEMENT[wire_format]
+        )
     except KeyError as exc:
         raise ValueError(f"unsupported wire format {wire_format!r}") from exc
     result = elements_in_chunk(element_count, elements_per_chunk, chunk_index) * element_bytes
@@ -649,7 +655,7 @@ def validate_payload_length(
     element_count: int,
     elements_per_chunk: int,
     chunk_index: int,
-    wire_format: WireFormat,
+    wire_format: WireFormat | PartialWireFormat,
 ) -> int:
     expected = expected_payload_bytes(element_count, elements_per_chunk, chunk_index, wire_format)
     prism_bytes = CONTROL_WORD_BYTES + DATA_HEADER_BYTES + expected

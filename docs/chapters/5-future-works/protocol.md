@@ -5,14 +5,12 @@ admission, phase bitmaps, and reliable direct-link delivery. Future revisions
 should extend those contracts without weakening generation safety or treating
 Ethernet loss as silent success.
 
-## Exact partials across a hierarchy
+## Exact and Kulisch partial formats
 
-The most important arithmetic extension is a lossless partial-accumulator wire
-format. A local exact accumulator serialized as FP32 rounds at every tree level;
-it cannot produce a globally exact, tree-independent reduction. A future
-`EXACT_PARTIAL_WIRE` profile must specify representation width, normalization,
-special-value flags, overflow, merge rules, payload geometry, and capability
-negotiation before a multi-level exact tuple can be advertised.
+Protocol 1.0 assigns only FP32 partials. A future exact-FP32 or Kulisch format
+must define its byte layout, merge rules, special values, overflow, and payload
+geometry before receiving a numeric Partial Wire Format value. Support will be
+advertised through the four-field arithmetic tuple, not a separate feature bit.
 
 ## Scalable completion memory
 

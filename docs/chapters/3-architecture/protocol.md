@@ -172,23 +172,19 @@ The payload length of a locally transmitted packet is
 \mathrm{bytes\_per\_element}(\mathrm{packet\ wire\ format}).
 \]
 
-| Formats used by the tree | Maximum elements per chunk |
-|---|---:|
-| INT8 input, INT8 output | 1474 |
-| FP32 input, FP32 output | 368 |
-| INT8 input, FP32 output | 368 |
-
-For example, 1000 FP32 elements form chunks of 368, 368, and 264 elements.
-No FP16, BF16, or FP32 element is split across packets. The AM also enforces
-`child.output_format == parent.input_format` on every aggregation edge.
+Because FP32 is the only assigned partial format, Protocol 1.0 limits every
+operation to at most `floor(1474/4) = 368` elements per chunk, even when endpoint
+input and output are narrower. One geometry can therefore be installed at every
+node. For example, 1000 elements form chunks of 368, 368, and 264 elements.
+No element is split across packets. The AM chooses one tree-wide arithmetic
+tuple and enforces the same Partial Wire Format on every aggregation edge.
 Ethernet minimum-frame padding is not interpreted as vector data.
 
-`PM_OP_COL_RES` carries no per-packet format tag. Protocol 1.0 therefore also
-requires one tree-wide `output_format`, equal to the aggregation root's result
-format. A leaf may convert its input before emitting the first partial—for
-example INT8 to FP32—but later levels cannot introduce another wire-format
-conversion. Trees that need different intermediate and final formats are
-unsupported in 1.0.
+DATA and RES carry no per-packet format tag. Their encoding is selected by the
+installed Operation descriptor: endpoint-to-leaf DATA uses Input Wire Format,
+switch-to-switch DATA uses Partial Wire Format, and RES uses Output Wire Format.
+Protocol 1.0 requires one tree-wide arithmetic tuple so every receiver can
+decode a payload from its configured role and Contributor binding.
 
 Chunks may arrive in a different order inside the admitted receive window.
 Chunk Index, not arrival order, selects the correct temporary state.
@@ -495,7 +491,7 @@ action as destination.
 | Contributor ID | Selects the expected contributor on the current link and allows duplicate or wrong-source contributions to be detected |
 | Chunk Index | Places the payload in the correct vector interval and selects temporary reduction state independently of arrival order |
 | Flags | Mark retransmission, ACK request, and the last chunk |
-| Payload | Contains the elements that this node must accumulate for the named chunk |
+| Payload | Contains Input Wire Format elements when the sender is an endpoint, or Partial Wire Format elements when the sender is a child switch |
 
 ### `PM_OP_COL_RES`
 
@@ -861,10 +857,11 @@ The first RTL prototype focuses on `REDUCE` and `ALLREDUCE`.
 
 ## Wire formats and accumulator modes
 
-A **wire format** describes how elements are encoded in DATA or RES. An
-**accumulator mode** describes how a switch combines them internally. The
-output format is independent, so INT8 input may be accumulated or emitted in a
-wider representation.
+An **input wire format** describes endpoint contributions, a **partial wire
+format** describes DATA emitted from one switch to its parent, and an **output
+wire format** describes final RES elements. An **accumulator mode** describes
+how a switch combines values internally. Keeping these four choices explicit
+makes every conversion boundary selectable and queryable.
 
 | Value | Wire format | Bytes per element |
 |---:|---|---:|
@@ -873,6 +870,21 @@ wider representation.
 | `0x03` | `BF16` | 2 |
 | `0x04` | `FP32` | 4 |
 
+Protocol 1.0 assigns only FP32 for switch-to-switch partials:
+
+| Value | Partial Wire Format | Bytes per element |
+|---:|---|---:|
+| `0x00` | `INVALID` | — |
+| `0x04` | `FP32` | 4 |
+
+This is deliberately stricter than the endpoint format registry: it prevents a
+tree from narrowing partials to INT8, FP16, or BF16 at every hop. Exact-FP32 and
+Kulisch partials are not assigned in 1.0 because their byte layout, merge rules,
+special values, and overflow behavior are not yet frozen. The explicit Partial
+Wire Format field lets a later revision add them without changing the Operation
+descriptor. FP32 retains value `0x04` from the ordinary Wire Format registry so
+the same payload encoding never has two numeric codes.
+
 The accumulator-mode assignments are:
 
 | Value | Accumulator mode |
@@ -880,18 +892,15 @@ The accumulator-mode assignments are:
 | `0x01` | `NATIVE` |
 | `0x02` | `FP32` |
 | `0x03` | `DETERMINISTIC_FP32` |
-| `0x04` | `EXACT_FP16_MAG40` |
-| `0x05` | `EXACT_BF16_MAG261` |
-| `0x06` | `EXACT_FP32_MAG277` |
 
 Assignment of a code does not claim RTL support: the complete
-`(input, accumulator, output)` tuple
+`(input, accumulator, partial, output)` tuple
 must be advertised and accepted by `OP_PREPARE`.
 
 `DETERMINISTIC_FP32` combines contributors in ascending local Contributor ID.
-Exact accumulation is local to one node. Serializing a local exact partial as
-FP32 rounds at that link, so global tree-independent exactness requires a
-lossless partial representation that Protocol 1.0 does not yet define. See
+An exact accumulator is intentionally not assigned in Protocol 1.0: with an
+FP32 partial it would still round at every switch boundary, while a tree-exact
+profile also needs a new partial encoding. See
 [Floating-Point Reproducibility](../1-introduction/reproducibility.md) for the
 numerical derivation.
 
@@ -1077,9 +1086,10 @@ The 40-byte `OPERATION_DESCRIPTOR` value is:
 | 1 | 8 | Reduction Operator |
 | 2 | 8 | Input Wire Format |
 | 3 | 8 | Accumulator Mode |
-| 4 | 8 | Output Wire Format |
-| 5 | 8 | Flags; bit 0 is Result Delivery Role |
-| 6 | 16 | Reserved, zero |
+| 4 | 8 | Partial Wire Format |
+| 5 | 8 | Output Wire Format |
+| 6 | 8 | Flags; bit 0 is Result Delivery Role |
+| 7 | 8 | Reserved, zero |
 | 8 | 32 | Element Count |
 | 12 | 16 | Elements per Chunk |
 | 14 | 16 | Requested Window, in chunks |
@@ -1163,8 +1173,9 @@ A resource snapshot reports availability but reserves nothing. Only
 
 Supported-semantic, operator, and security-profile values are bitmasks with bit
 `n` corresponding to numeric registry value `n`. Arithmetic tuple entries
-encode input format in bits 63:56, accumulator mode in 55:48, output format in
-47:40, and zero in 39:0. `SUPPORTED_ARITHMETIC_TUPLE` may therefore appear
+encode input format in bits 63:56, accumulator mode in 55:48, partial wire
+format in 47:40, output format in 39:32, and zero in 31:0.
+`SUPPORTED_ARITHMETIC_TUPLE` may therefore appear
 more than once; other capability keys appear once.
 
 <p class="protocol-registry__heading">Dynamic resource keys</p>
@@ -1268,7 +1279,10 @@ The `FEATURE_MASK` and `SUPPORTED_RELIABILITY_FEATURES` bit assignments are:
 | `0x0010` | `MANAGEMENT_AUTH` |
 | `0x0020` | `MACSEC_MANAGEMENT_DOMAIN` |
 | `0x0040` | `EXTERNAL_BITMAP_MEMORY` |
-| `0x0080` | `EXACT_PARTIAL_WIRE` |
+
+Feature bit `0x0080` is reserved and must be transmitted as zero in Protocol
+1.0. A future partial format will be negotiated through
+`SUPPORTED_ARITHMETIC_TUPLE`; it will not require an independent feature bit.
 
 </details>
 
@@ -1280,11 +1294,13 @@ carry IEEE 754 binary16 and binary32 bit patterns; BF16 carries one sign bit,
 eight exponent bits, and seven fraction bits.
 
 A node supports arithmetic only through an explicitly advertised
-`(input_format, accumulator_mode, output_format)` tuple. Protocol 1.0 freezes
-one baseline tuple for the `SUM` operator:
+`(input_format, accumulator_mode, partial_format, output_format)` tuple.
+`OP_PREPARE` selects exactly one advertised tuple and the AM requires the same
+tuple at every switch in the tree. Protocol 1.0 freezes one baseline tuple for
+the `SUM` operator:
 
 \[
-(\mathrm{FP32},\ \mathrm{DETERMINISTIC\_FP32},\ \mathrm{FP32}).
+(\mathrm{FP32},\ \mathrm{DETERMINISTIC\_FP32},\ \mathrm{FP32},\ \mathrm{FP32}).
 \]
 
 An implementation advertising this tuple obeys the following normative
@@ -1307,9 +1323,9 @@ semantics:
   signs is `+0` under the selected rounding mode;
 - arithmetic exception flags and traps are not transported by Protocol 1.0.
 
-The exact accumulator codes describe node-local finite accumulation. They do
-not provide global tree-independent exactness when a partial is serialized as
-FP32; that requires `EXACT_PARTIAL_WIRE` or another lossless merge format.
+Exact and Kulisch arithmetic must not be advertised in Protocol 1.0. A later
+revision must assign both its Accumulator Mode and Partial Wire Format and freeze
+the corresponding merge semantics.
 
 <details class="protocol-registry" markdown="1">
 <summary>Security-profile assignments</summary>

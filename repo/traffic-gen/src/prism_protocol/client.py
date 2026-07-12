@@ -675,8 +675,6 @@ class PrismManager:
                 raise ValueError("a switch cannot be its own parent")
             if group_descriptors[parent].node_role not in (NodeRole.INTERNAL, NodeRole.ROOT):
                 raise ValueError("a parent switch must be INTERNAL or ROOT")
-            if descriptors[child].output_format != descriptors[parent].input_format:
-                raise ValueError("child.output_format must equal parent.input_format")
 
             visited = {child}
             current = parent
@@ -694,9 +692,9 @@ class PrismManager:
                 if child_count != group.expected_local_contributors:
                     raise ValueError("INTERNAL/ROOT contributor count must equal its child-subtree count")
 
-        result_format = descriptors[root].output_format
-        if any(item.output_format != result_format for item in descriptors.values()):
-            raise ValueError("Protocol 1.0 requires one tree-wide result/output wire format")
+        arithmetic_tuple = descriptors[root].arithmetic_tuple
+        if any(item.arithmetic_tuple != arithmetic_tuple for item in descriptors.values()):
+            raise ValueError("Protocol 1.0 requires one tree-wide arithmetic tuple")
 
         for switch_id, descriptor in descriptors.items():
             group_ids = {group.group_id for group in group_descriptors[switch_id].replication_groups}

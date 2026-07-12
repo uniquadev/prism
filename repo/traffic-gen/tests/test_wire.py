@@ -15,6 +15,7 @@ from prism_protocol.constants import (
     ControlFlag,
     DataFlag,
     Opcode,
+    PartialWireFormat,
     ProgressFlag,
     ProgressPeerKind,
     ProgressReason,
@@ -26,7 +27,7 @@ from prism_protocol.constants import (
     assert_unique_enum_values,
 )
 from prism_protocol.errors import ProtocolDecodeError
-from prism_protocol.model import OperationDescriptor, ResultRoute
+from prism_protocol.model import ArithmeticTuple, OperationDescriptor, ResultRoute
 from prism_protocol.wire import (
     ControlFrame,
     ControlHeader,
@@ -209,6 +210,24 @@ class WireLayoutTests(unittest.TestCase):
         self.assertEqual(validate_payload_length(20, 1, 1, 0, WireFormat.FP32), 4)  # 16 bytes Ethernet padding
         with self.assertRaises(ProtocolDecodeError):
             validate_payload_length(5, 1, 1, 0, WireFormat.FP32)
+    def test_partial_wire_values_and_arithmetic_tuple_encoding_are_locked(self) -> None:
+        self.assertEqual(
+            {member.name: int(member) for member in PartialWireFormat},
+            {
+                "INVALID": 0x00,
+                "FP32": 0x04,
+            },
+        )
+        arithmetic = ArithmeticTuple(
+            WireFormat.FP32,
+            AccumulatorMode.DETERMINISTIC_FP32,
+            PartialWireFormat.FP32,
+            WireFormat.FP32,
+        )
+        self.assertEqual(arithmetic.encode(), 0x0403040400000000)
+        self.assertEqual(ArithmeticTuple.decode(arithmetic.encode()), arithmetic)
+        with self.assertRaisesRegex(ValueError, "reserved bits"):
+            ArithmeticTuple.decode(arithmetic.encode() | 1)
 
     def test_operation_descriptor_round_trip(self) -> None:
         descriptor = OperationDescriptor(
@@ -216,6 +235,7 @@ class WireLayoutTests(unittest.TestCase):
             ReductionOperator.SUM,
             WireFormat.FP32,
             AccumulatorMode.DETERMINISTIC_FP32,
+            PartialWireFormat.FP32,
             WireFormat.FP32,
             element_count=1000,
             elements_per_chunk=368,
@@ -229,6 +249,7 @@ class WireLayoutTests(unittest.TestCase):
         )
         encoded = descriptor.pack()
         self.assertEqual(len(encoded), 40)
+        self.assertEqual(encoded[2:7], bytes((0x04, 0x03, 0x04, 0x04, 0x01)))
         self.assertEqual(OperationDescriptor.unpack(encoded, descriptor.result_routes), descriptor)
         malformed = bytearray(encoded)
         malformed[7] = 1
