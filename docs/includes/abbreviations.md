@@ -1,4 +1,5 @@
 *[INC]: In-Network Collective
+*[SANs]: System Area Networks
 *[SHARP]: Scalable Hierarchical Aggregation and Reduction Protocol
 *[VOQ]: Virtual Output Queueing
 *[VLAN]: Virtual Local Area Network

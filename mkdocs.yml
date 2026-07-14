@@ -132,10 +132,12 @@ nav:
       - chapters/2-getting-started/index.md
   - "3. Architecture":
       - chapters/3-architecture/index.md
-      - "3.1 Protocol": chapters/3-architecture/protocol.md
-      - "3.2 Pipeline": chapters/3-architecture/pipeline.md
-      - "3.3 Interfaces": chapters/3-architecture/interfaces.md
-      - "3.4 Register Map": chapters/3-architecture/register-map.md
+      - "3.1 Protocol": chapters/3-architecture/1.protocol.md
+      - "3.2 Pipeline": chapters/3-architecture/2.pipeline.md
+      - "3.4 Parameters": chapters/3-architecture/4.parameters.md
+      - "3.5 Interfaces":
+        - chapters/3-architecture/4-interfaces/index.md
+        - "Collective Engine": chapters/3-architecture/4-interfaces/collective-engine.md
   - "4. Results":
       - chapters/4-results/index.md
       - "4.1 Verification Evidence": chapters/4-results/verification.md
