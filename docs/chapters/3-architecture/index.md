@@ -3,7 +3,10 @@
 
 <figure markdown="span">
   ![PRISM Switch Architecture Overview](../../assets/images/architecture/overview.png){ loading=lazy }
-  <!-- <figcaption>PRISM Switch Architecture Overview</figcaption> -->
+<figcaption>
+<strong>PRISM microarchitecture overview.</strong>
+<i>N</i> denotes the number of ingress ports, while <i>K</i> denotes the number of internal packet-injection sources.
+</figcaption>
 </figure>
 
 Network switches implement the routing, arbitration, and switching functions of

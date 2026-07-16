@@ -17,3 +17,26 @@
 *[HPC]: High-Performance Computing
 *[PCAP]: Packet Capture
 *[RTL]: Register-Transfer Level
+*[IB]: Ingress Buffer / Ingress Staging
+*[HP]: Header Parsing
+*[FC]: Forwarding Classification
+*[RA]: Route and Resource Admission
+*[PS]: Packet Storage
+*[PV]: Packet Validation
+*[QE]: Queue Enqueue
+*[SA]: Switch Allocation
+*[ST]: Switch Traversal
+*[OB]: Output Buffer
+*[CA]: Contribution Acceptance
+*[PA]: Payload Alignment
+*[OS]: Ordered Issue
+*[AU]: Arithmetic Unit
+*[CC]: Chunk Completion
+*[RD]: Result Datapath
+*[PG]: Packet Generation
+*[RC]: Replay Cache
+*[IQ]: Internal Injection Queues
+*[PH]: Progress Handling
+*[RT]: Retry Timers
+*[MC]: Management Control
+*[CT]: Completion Tracking
