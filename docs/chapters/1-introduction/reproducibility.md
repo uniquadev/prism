@@ -17,7 +17,7 @@ PRISM exposes reproducibility as a design space rather than as a single hard-cod
 | Strategy | Datapath idea | Reproducibility guarantee | Main cost |
 |---|---|---|---|
 | **Baseline FP32 accumulation** | Accumulate operands as packets arrive. | None beyond a particular run. | Lowest state and simplest datapath. |
-| **Deterministic FP32 scheduling** | Wait for all contributors expected by one chunk, then add them in ascending local Contributor ID order. | Bitwise reproducible for the same contributions and logical order. | Buffering, contribution bitmaps, head-of-line blocking. |
+| **Contributor-ordered FP32 scheduling** | For each global element tile, apply the next ascending local Contributor ID as soon as it is available. | Bitwise reproducible for the same contributions and logical order. | Per-range ordering state and stalls behind a missing next contributor. |
 | **Kulisch-style / superaccumulator path** | Convert each finite input into an exact fixed-point deposit; merge deposits with integer arithmetic; round once at the end. | Order-independent exact finite summation before final rounding. | Wide accumulator state, banking, carry management, final normalization, exception policy. |
 
 
@@ -28,8 +28,8 @@ flowchart LR
     S -->|Baseline| B[Arrival-order FP32 add]
     B --> O1[Fast but order-dependent]
 
-    S -->|Deterministic FP32| C[Wait for contribution bitmap]
-    C --> D[Sequential FP32 fold by Contributor ID]
+    S -->|Contributor-ordered FP32| C[Wait only for next Contributor ID]
+    C --> D[Streamed FP32 fold by Contributor ID]
     D --> O2[Bitwise stable for fixed logical order]
 
     S -->|Superaccumulator| E[Decode sign, exponent, significand]
@@ -45,8 +45,8 @@ The important distinction is that **deterministic scheduling fixes the order**, 
     This guarantee applies to the operands merged by one accumulator. In a
     multi-level tree, serializing an exact local partial to FP32 rounds at that
     hop. Global, tree-independent exactness requires a lossless partial-state
-    representation. Protocol 1.0 reserves an exact-partial capability but does
-    not yet define that representation.
+    representation. Protocol 1.0 provides profile and tuple extension points
+    but does not yet assign that wire representation.
 
 ## Why try superaccumulators now?
 
@@ -181,9 +181,12 @@ Preserving order can also fight the purpose of in-network computing. If reproduc
 
 PRISM therefore compares both paths:
 
-1. **Deterministic FP32 mode**, useful as a lower-area baseline and for studying scheduling determinism.
-2. **Superaccumulator mode**, useful for studying order-independent finite summation and the hardware cost of exact accumulation.
-3. **Wait-all operation mode**, useful as a control policy to prevent early emission and arrival-order dependence, but not an arithmetic solution by itself.
+1. **FP32 accumulator profile with CONTRIBUTOR_ORDERED policy**, useful as a lower-area baseline for scheduling determinism while still streaming ready ranges.
+2. **Future superaccumulator profiles**, useful for studying order-independent finite summation and the hardware cost of exact accumulation.
+
+Accumulator representation and scheduling policy are separate protocol choices:
+an exact backend need not inherit FP32 ordering constraints, and ordered FP32
+does not imply a whole-chunk wait-all barrier.
 
 ## Expected outcome
 

@@ -35,8 +35,8 @@ If you use PRISM in your project, please cite the repository and/or the thesis:
 
 -   :material-chip: **Hardware view**
 
-    Move through [3.1 Protocol](chapters/3-architecture/protocol.md),
-    [3.2 Pipeline](chapters/3-architecture/pipeline.md) pages.
+    Move through [3.1 Protocol](chapters/3-architecture/1.protocol.md) and
+    [3.2 Pipeline](chapters/3-architecture/2.pipeline.md).
 
 -   :material-chart-line: **Thesis evidence**
 

@@ -36,7 +36,7 @@ un'unica scelta aritmetica codificata rigidamente.
 | Strategia | Idea per il datapath | Garanzia di riproducibilità | Costo principale |
 |---|---|---|---|
 | **Accumulazione FP32 di base** | Accumula gli operandi nell'ordine di arrivo dei pacchetti. | Nessuna oltre la singola esecuzione. | Stato minimo e datapath più semplice. |
-| **Scheduling FP32 deterministico** | Attende i contributori previsti per il chunk e li somma per Contributor ID locale crescente. | Riproducibilità bitwise per gli stessi contributi e lo stesso ordine. | Buffering, bitmap dei contributi e head-of-line blocking. |
+| **Scheduling FP32 per contributore** | Per ogni tile globale applica il successivo Contributor ID locale crescente appena disponibile. | Riproducibilità bitwise per gli stessi contributi e lo stesso ordine. | Stato d'ordine per range e attesa del successivo contributore mancante. |
 | **Percorso in stile Kulisch / superaccumulatore** | Mappa ogni input finito in una rappresentazione fixed-point esatta, combina i contributi con aritmetica intera e arrotonda una sola volta alla fine. | Somma finita esatta e indipendente dall'ordine prima dell'arrotondamento finale. | Stato dell'accumulatore ampio, banking, gestione dei riporti, normalizzazione finale e politica delle eccezioni. |
 
 
@@ -47,8 +47,8 @@ flowchart LR
     S -->|Base| B[Somma FP32 in ordine di arrivo]
     B --> O1[Veloce ma dipendente dall'ordine]
 
-    S -->|FP32 deterministico| C[Attesa della bitmap dei contributi]
-    C --> D[Fold FP32 per Contributor ID crescente]
+    S -->|FP32 ordinato| C[Attesa del solo Contributor ID successivo]
+    C --> D[Fold FP32 streaming per Contributor ID crescente]
     D --> O2[Bitwise stabile per un ordine logico fisso]
 
     S -->|Superaccumulatore| E[Decodifica segno, esponente e significando]
@@ -69,7 +69,7 @@ una riduzione collettiva indipendente dall'ordine.
     un albero multi-livello, serializzare un parziale esatto in FP32 arrotonda a
     quell'hop. L'esattezza globale indipendente dall'albero richiede una
     rappresentazione lossless dello stato parziale. Protocol 1.0 riserva una
-    capability per i parziali esatti, ma non ne definisce ancora il formato.
+    punti di estensione per profili e tuple, ma non assegna ancora quel formato.
 
 ## Perché sperimentare ora con i superaccumulatori?
 
@@ -208,10 +208,11 @@ numero di rank, nel chunking o nelle somme parziali possono ancora cambiare il
 risultato. Il superaccumulatore, invece, deposita esattamente gli operandi finiti
 e arrotonda una sola volta.
 
-PRISM confronta quindi **due datapath aritmetici**: FP32 deterministico, come
-riferimento a minore area, e accumulazione esatta, indipendente dall'ordine. La
-condizione di completamento — tutti i contributori attesi per il chunk — è un
-requisito di controllo comune; non costituisce una terza modalità aritmetica.
+PRISM confronta quindi il **profilo accumulatore FP32 con policy
+CONTRIBUTOR_ORDERED**, come riferimento a minore area, con futuri profili di
+accumulazione esatta indipendenti dall'ordine. Rappresentazione e policy sono
+scelte separate: l'ordine FP32 non impone una barriera wait-all sull'intero
+chunk, e un backend esatto non deve ereditare quella policy.
 
 ## Risultato atteso
 

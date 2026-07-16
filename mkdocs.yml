@@ -137,7 +137,48 @@ nav:
       - "3.4 Parameters": chapters/3-architecture/4.parameters.md
       - "3.5 Interfaces":
         - chapters/3-architecture/4-interfaces/index.md
-        - "Collective Engine": chapters/3-architecture/4-interfaces/collective-engine.md
+        - "Shared contracts": chapters/3-architecture/4-interfaces/common-contracts.md
+        - "Top-level modules":
+          - "prism_switch_top": chapters/3-architecture/4-interfaces/top/prism_switch_top.md
+          - "prism_switch_core": chapters/3-architecture/4-interfaces/top/prism_switch_core.md
+        - "Main units":
+          - "prism_ingress_unit": chapters/3-architecture/4-interfaces/units/prism_ingress_unit.md
+          - "prism_forwarding_unit": chapters/3-architecture/4-interfaces/units/prism_forwarding_unit.md
+          - "prism_management_unit": chapters/3-architecture/4-interfaces/units/prism_management_unit.md
+          - "prism_collective_unit": chapters/3-architecture/4-interfaces/units/prism_collective_unit.md
+          - "prism_result_delivery_unit": chapters/3-architecture/4-interfaces/units/prism_result_delivery_unit.md
+          - "prism_reliability_unit": chapters/3-architecture/4-interfaces/units/prism_reliability_unit.md
+          - "prism_egress_unit": chapters/3-architecture/4-interfaces/units/prism_egress_unit.md
+        - "Stream components":
+          - "prism_packet_fifo": chapters/3-architecture/4-interfaces/components/stream/prism_packet_fifo.md
+          - "prism_packet_store": chapters/3-architecture/4-interfaces/components/stream/prism_packet_store.md
+          - "prism_header_parser": chapters/3-architecture/4-interfaces/components/stream/prism_header_parser.md
+          - "prism_packet_validator": chapters/3-architecture/4-interfaces/components/stream/prism_packet_validator.md
+          - "prism_admission_controller": chapters/3-architecture/4-interfaces/components/stream/prism_admission_controller.md
+          - "prism_voq_bank": chapters/3-architecture/4-interfaces/components/stream/prism_voq_bank.md
+          - "prism_packet_arbiter": chapters/3-architecture/4-interfaces/components/stream/prism_packet_arbiter.md
+          - "prism_stream_crossbar": chapters/3-architecture/4-interfaces/components/stream/prism_stream_crossbar.md
+          - "prism_egress_buffer": chapters/3-architecture/4-interfaces/components/stream/prism_egress_buffer.md
+          - "prism_packet_serializer": chapters/3-architecture/4-interfaces/components/stream/prism_packet_serializer.md
+        - "Collective components":
+          - "prism_collective_context_table": chapters/3-architecture/4-interfaces/components/collective/prism_collective_context_table.md
+          - "prism_contribution_tracker": chapters/3-architecture/4-interfaces/components/collective/prism_contribution_tracker.md
+          - "prism_data_depacketizer": chapters/3-architecture/4-interfaces/components/collective/prism_data_depacketizer.md
+          - "prism_accumulation_scheduler": chapters/3-architecture/4-interfaces/components/collective/prism_accumulation_scheduler.md
+          - "prism_accumulator_store": chapters/3-architecture/4-interfaces/components/collective/prism_accumulator_store.md
+          - "prism_output_range_tracker": chapters/3-architecture/4-interfaces/components/collective/prism_output_range_tracker.md
+          - "prism_output_packetizer": chapters/3-architecture/4-interfaces/components/collective/prism_output_packetizer.md
+          - "prism_result_replicator": chapters/3-architecture/4-interfaces/components/collective/prism_result_replicator.md
+        - "Reliability components":
+          - "prism_progress_engine": chapters/3-architecture/4-interfaces/components/reliability/prism_progress_engine.md
+          - "prism_replay_cache": chapters/3-architecture/4-interfaces/components/reliability/prism_replay_cache.md
+          - "prism_retry_timer": chapters/3-architecture/4-interfaces/components/reliability/prism_retry_timer.md
+        - "Arithmetic components":
+          - "prism_fp32_input_converter": chapters/3-architecture/4-interfaces/components/arithmetic/prism_fp32_input_converter.md
+          - "prism_accumulator_backend_dispatcher": chapters/3-architecture/4-interfaces/components/arithmetic/prism_accumulator_backend_dispatcher.md
+          - "prism_fp32_alu": chapters/3-architecture/4-interfaces/components/arithmetic/prism_fp32_alu.md
+          - "prism_fp32_alu_array": chapters/3-architecture/4-interfaces/components/arithmetic/prism_fp32_alu_array.md
+          - "prism_fp32_output_converter": chapters/3-architecture/4-interfaces/components/arithmetic/prism_fp32_output_converter.md
   - "4. Results":
       - chapters/4-results/index.md
       - "4.1 Verification Evidence": chapters/4-results/verification.md

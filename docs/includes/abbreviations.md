@@ -29,11 +29,11 @@
 *[OB]: Output Buffer
 *[CA]: Contribution Acceptance
 *[PA]: Payload Alignment
-*[OS]: Ordered Issue
-*[AU]: Arithmetic Unit
-*[CC]: Chunk Completion
+*[AS]: Accumulation Scheduler
+*[ORT]: Output Range Tracker
+*[OPK]: Output Packetizer
 *[RD]: Result Datapath
-*[PG]: Packet Generation
+*[SER]: Packet Serialization
 *[RC]: Replay Cache
 *[IQ]: Internal Injection Queues
 *[PH]: Progress Handling

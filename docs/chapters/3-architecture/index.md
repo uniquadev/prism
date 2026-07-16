@@ -31,7 +31,8 @@ defined by the protocol.
 
 -   :material-chip: **Modules view**
 
-    Start with [3.4 Interfaces](4-interfaces/index.md) and continue
-    with [3.4. Collective Engine](4-interfaces/collective-engine.md).
+    Start with [3.5 Interfaces](4-interfaces/index.md), then read the
+    [top-level contracts](4-interfaces/top/prism_switch_top.md) before moving
+    down through main units and components.
 
 </div>

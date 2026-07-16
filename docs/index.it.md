@@ -68,8 +68,8 @@ Se utilizzi PRISM nel tuo progetto, cita il repository e/o la tesi:
 
 -   :material-chip: **Vista hardware**
 
-    Prosegui con le pagine [3.1 Protocollo](chapters/3-architecture/protocol.md)
-    e [3.2 Pipeline](chapters/3-architecture/pipeline.md).
+    Prosegui con le pagine [3.1 Protocollo](chapters/3-architecture/1.protocol.md)
+    e [3.2 Pipeline](chapters/3-architecture/2.pipeline.md).
 
 -   :material-chart-line: **Evidenze della tesi**
 
