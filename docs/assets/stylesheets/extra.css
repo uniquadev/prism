@@ -340,6 +340,20 @@ body.mermaid-viewer-open {
     width: 100%;
   }
 
+  .md-typeset .pipeline-timeline table {
+    display: table;
+    min-width: 100%;
+    width: max-content;
+  }
+
+  .md-typeset .pipeline-timeline table th,
+  .md-typeset .pipeline-timeline table td,
+  .md-typeset .pipeline-timeline table code {
+    overflow-wrap: normal;
+    white-space: nowrap;
+    word-break: normal;
+  }
+
   .md-typeset table[data-responsive-table="true"] {
     background: transparent;
     border: 0;

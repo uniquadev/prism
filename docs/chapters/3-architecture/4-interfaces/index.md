@@ -8,9 +8,7 @@ unit tests, and the traffic-generation library.
 
 The first synthesis is a minimum two-port, two-rank `SINGLE` node for the lab
 FPGA: both ports are 100 Gbit/s full duplex at the 322.265625 MHz datapath
-clock. Minimum describes deployed scale, not engineering quality. The RTL must
-implement the Protocol 1.0 discovery, setup, DATA/RES, reliability, REDUCE, and
-ALLREDUCE contracts with production-ready backpressure and hazard behavior.
+clock.
 Parameterized ports, tables, resources, accumulator backends, and result routes
 allow later trees and arithmetic profiles without replacing module boundaries.
 
@@ -22,7 +20,7 @@ components.
 
 Read [Protocol](../1.protocol.md) for normative packet semantics,
 [Pipeline](../2.pipeline.md) for packet movement and state transitions,
-[Parameters](../4.parameters.md) for the v1 build configuration, and
+[Parameters](../4.parameters.md) for configuration, and
 [Shared contracts](common-contracts.md) for packed internal bus definitions.
 
 ## Ordered module hierarchy

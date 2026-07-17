@@ -3,6 +3,10 @@
     const tables = document.querySelectorAll(".md-typeset table:not([class])");
 
     tables.forEach(function (table) {
+      if (table.closest(".pipeline-timeline")) {
+        return;
+      }
+
       if (table.dataset.responsiveTable === "true") {
         return;
       }
