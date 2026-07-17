@@ -17,6 +17,7 @@
 *[HPC]: High-Performance Computing
 *[PCAP]: Packet Capture
 *[RTL]: Register-Transfer Level
+*[II]: Initiation Interval
 *[IB]: Ingress Buffer / Ingress Staging
 *[HP]: Header Parsing
 *[FC]: Forwarding Classification
