@@ -25,7 +25,7 @@ module pcap_dumper #(
     parameter c_max_pkt_size = 2048,
     parameter c_caplen       = 0,
     parameter c_ns_precision = 1,
-    parameter CLOCK_FREQ_HZ  = 322265625,
+    parameter CLOCK_FREQ_HZ  = 250000000,
     parameter AXIS_WIDTH     = 512
 
 

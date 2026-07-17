@@ -2,8 +2,8 @@
 
 **Module class:** `COMPONENT / STREAM`  
 
-`prism_packet_fifo` is a packet-aware sequential beat queue used for shell
-staging, VOQs, and internal injection. It separates capacity reservation from
+`prism_packet_fifo` is a packet-aware sequential beat queue used for VOQs and
+internal injection. It separates capacity reservation from
 beat transfer so an admitted packet can never run out of storage halfway
 through enqueue.
 
@@ -37,17 +37,13 @@ through enqueue.
   transfer. Simultaneous enqueue and dequeue are legal.
 - Beats belonging to an aborted or malformed tentative packet never become
   visible at dequeue.
-- A non-backpressurable physical-ingress instance uses a pre-armed maximum-frame
-  reservation supplied by `prism_switch_top`; it does not bypass reservation
-  accounting.
 - `show-ahead` output may be implemented, but no combinational path may run from
-  downstream `tready` to upstream physical RX logic.
+  downstream `tready` across a registered module boundary.
 - Depth, memory style, and cut-through threshold are parameters; counters are
   sized to the configured depth and asserted against overflow at elaboration.
 
 ## Related modules and concepts
 
-Shell staging is owned by [`prism_switch_top`](../../top/prism_switch_top.md),
-while matrix instances are composed by [`prism_voq_bank`](prism_voq_bank.md).
-Random packet retention uses [`prism_packet_store`](prism_packet_store.md)
-instead of this FIFO.
+Matrix instances are composed by [`prism_voq_bank`](prism_voq_bank.md). Random
+packet retention uses [`prism_packet_store`](prism_packet_store.md) instead of
+this FIFO.

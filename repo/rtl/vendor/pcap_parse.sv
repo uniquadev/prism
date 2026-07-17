@@ -15,7 +15,7 @@ module pcap_parse #(
     parameter default_ifg   = 6        ,
     parameter play_in_loop   = 0        ,
     parameter n_loops        = 0        ,
-    parameter CLOCK_FREQ_HZ = 322265625,
+    parameter CLOCK_FREQ_HZ = 250000000,
     parameter AXIS_WIDTH    = 512
 ) (
     input                            pause       ,

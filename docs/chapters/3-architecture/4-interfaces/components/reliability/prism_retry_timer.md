@@ -15,7 +15,7 @@ transfers. It schedules replay work but never reads or reconstructs packets.
   timer after acknowledgment, abort, release, or fatal feedback.
 
 - **Timebase — input, 64 bits:** free-running datapath-domain counter derived
-  from the configured 322.265625 MHz frequency.
+  from the configured 250 MHz frequency.
 
 - **Expiry/replay request — output, 192-bit replay key + 16-bit attempt count +
   8-bit status with valid/ready:** requests one retained replay or reports retry

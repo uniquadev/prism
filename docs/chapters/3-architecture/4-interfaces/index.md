@@ -6,8 +6,8 @@ as ready/valid streams, lookup/update channels, or memory interfaces with
 explicit bus widths. These contracts are the common hand-off for RTL, Cocotb
 unit tests, and the traffic-generation library.
 
-The first synthesis is a minimum two-port, two-rank `SINGLE` node for the lab
-FPGA: both ports are 100 Gbit/s full duplex at the 322.265625 MHz datapath
+The first synthesis is a minimum two-port, collective and control path only, two-rank `SINGLE` node for the lab
+FPGA: both ports are 100 Gbit/s full duplex at the 250 MHz datapath
 clock.
 Parameterized ports, tables, resources, accumulator backends, and result routes
 allow later trees and arithmetic profiles without replacing module boundaries.

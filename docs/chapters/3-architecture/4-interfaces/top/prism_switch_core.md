@@ -9,7 +9,7 @@ it does not expose OpenNIC clock-domain details.
 
 ## Contracts
 
-- **Clock/reset — input, 322.265625 MHz + 1 bit:** one datapath clock and
+- **Clock/reset — input, 250 MHz + 1 bit:** one datapath clock and
   synchronized active-low reset serve every instantiated child module.
 
 - **Ingress packet streams — input, 2 × `prism_axis`:** two 512-bit packet

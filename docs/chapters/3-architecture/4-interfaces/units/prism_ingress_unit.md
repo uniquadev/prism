@@ -10,7 +10,7 @@ packet-order context FIFO so body beats never need to be classified again.
 ## Contracts
 
 - **Ingress stream — input, one `prism_axis`:** accepts a 512-bit packet stream
-  from the shell-facing staging FIFO. Once the first beat is accepted, the unit
+  from the shell-facing adapter. Once the first beat is accepted, the unit
   must consume or deliberately drain the packet through `tlast`.
 
 - **Parsed-header event — output, 352-bit payload + valid/ready:** sends the
@@ -32,7 +32,7 @@ packet-order context FIFO so body beats never need to be classified again.
   slot.
 
 - **Closed local descriptor — output, 384-bit payload + valid/ready:** emits
-  exactly one descriptor after `tlast`, observed length, `tkeep`, shell error,
+  exactly one descriptor after `tlast`, observed length, `tkeep`, adapter error,
   and store completion are known. DATA, CONTROL, RESULT, and PROGRESS candidates
   all pass closed-packet validation; supported DATA proceeds to the collective
   unit, RES to result delivery, PROGRESS to reliability, and CONTROL to

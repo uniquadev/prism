@@ -84,5 +84,5 @@ direct egress record.
 - A crossbar grant is locked through accepted `tlast`; TX signals remain stable
   while stalled.
 - Reset invalidates tentative state and emits no partial packet, ACK, or
-  completion event. Datapath integration uses the 322.265625 MHz domain and a
+  completion event. Datapath integration uses the 250 MHz domain and a
   synchronized active-low reset.
