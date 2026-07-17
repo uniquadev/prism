@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from prism_protocol.constants import (
     MAX_BITMAP_BYTES,
     MAX_CHUNKS,
-    AccumulationPolicy,
     AccumulatorProfile,
     CollectiveSemantic,
     FeatureFlag,
@@ -22,6 +22,7 @@ from prism_protocol.constants import (
 )
 from prism_protocol.errors import GenerationWrapRequiresNewJob, InvalidHandleError, PrismError
 from prism_protocol.model import (
+    AccumulatorProfileCapability,
     Capabilities,
     ContributorBinding,
     GenerationStore,
@@ -37,6 +38,7 @@ from prism_protocol.model import (
     ResourceAllocation,
     ResourcePool,
     UpstreamAction,
+    required_accumulator_state_bits,
 )
 from prism_protocol.wire import OperationIdentity
 
@@ -55,8 +57,7 @@ def operation_descriptor(*, result_role: bool = False, requested_slots: int = 4,
         CollectiveSemantic.REDUCE,
         ReductionOperator.SUM,
         WireFormat.FP32,
-        AccumulatorProfile.FP32,
-        AccumulationPolicy.CONTRIBUTOR_ORDERED,
+        AccumulatorProfile.FP32_ORDERED,
         PartialWireFormat.FP32,
         WireFormat.FP32,
         element_count=chunks * 368,
@@ -85,6 +86,39 @@ def group_descriptor(*, destination_count: int = 1) -> GroupDescriptor:
 
 
 class BitmapAndAdmissionTests(unittest.TestCase):
+    def test_kulisch_family_selects_a_covering_compiled_width(self) -> None:
+        self.assertEqual(required_accumulator_state_bits(AccumulatorProfile.KULISCH_FP32, ReductionOperator.SUM, WireFormat.INT8, 256), 16)
+        self.assertEqual(required_accumulator_state_bits(AccumulatorProfile.KULISCH_FP32, ReductionOperator.SUM, WireFormat.FP16, 256), 49)
+        self.assertEqual(required_accumulator_state_bits(AccumulatorProfile.KULISCH_FP32, ReductionOperator.SUM, WireFormat.BF16, 256), 270)
+        self.assertEqual(required_accumulator_state_bits(AccumulatorProfile.KULISCH_FP32, ReductionOperator.SUM, WireFormat.FP32, 256), 286)
+        with self.assertRaisesRegex(ValueError, "unsupported accumulator operation"):
+            required_accumulator_state_bits(
+                AccumulatorProfile.KULISCH_FP32,
+                ReductionOperator.INVALID,
+                WireFormat.FP32,
+                256,
+            )
+
+        descriptor = replace(
+            operation_descriptor(),
+            accumulator_profile=AccumulatorProfile.KULISCH_FP32,
+            max_reduction_terms=256,
+        )
+        too_narrow = AccumulatorProfileCapability(AccumulatorProfile.KULISCH_FP32, 285, 256)
+        exact_fit = AccumulatorProfileCapability(AccumulatorProfile.KULISCH_FP32, 286, 256)
+        capabilities = Capabilities.reference(
+            arithmetic_tuples=frozenset({descriptor.arithmetic_tuple}),
+            accumulator_profiles=frozenset({too_narrow, exact_fit}),
+        )
+        capabilities.validate_operation(descriptor)
+
+        with self.assertRaises(PrismError) as caught:
+            Capabilities.reference(
+                arithmetic_tuples=frozenset({descriptor.arithmetic_tuple}),
+                accumulator_profiles=frozenset({too_narrow}),
+            ).validate_operation(descriptor)
+        self.assertEqual(caught.exception.status, Status.UNSUPPORTED_ARITHMETIC_TUPLE)
+
     def test_group_descriptor_reserves_legacy_quota_bytes(self) -> None:
         descriptor = group_descriptor()
         encoded = descriptor.descriptor_tlv().value

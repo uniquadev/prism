@@ -28,7 +28,7 @@ execute and what it can currently admit.
 
 - **Capability source — input, 256 bits plus repeated 64-bit tuple/profile
   entries:** receives elaborated limits, enabled collective/operator masks,
-  supported five-field arithmetic tuples, accumulator-profile widths, and
+  supported four-field arithmetic tuples, accumulator-profile widths, and
   reliability features directly from `prism_pkg.sv`/backend presence.
 
 - **Dynamic resource snapshot — input, 256 bits:** reports free active

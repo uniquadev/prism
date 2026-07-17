@@ -10,7 +10,7 @@ and never waits for the complete operation.
 
 - **Accepted packet — input, 320-bit contribution descriptor and 544-bit
   context with valid/ready:** supplies packet handle, format, profile, operator,
-  policy, First Element, and element count.
+  First Element, and element count.
 
 - **Packet read — output/input, 32-bit command and one `prism_axis`:** consumes
   the retained packet through `tlast` while preserving beat-to-beat carry.

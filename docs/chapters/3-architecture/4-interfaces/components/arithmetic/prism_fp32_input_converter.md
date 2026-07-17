@@ -3,8 +3,8 @@
 **Module class:** `COMPONENT / ARITHMETIC`
 
 `prism_fp32_input_converter` converts aligned FP16, BF16, or FP32 wire values
-to the FP32 accumulator profile. Other accumulator profiles use separate
-converters.
+to the binary32 state shared by `FP32` and `FP32_ORDERED`. Other accumulator
+representations use separate converters.
 
 ## Contracts
 
@@ -28,4 +28,4 @@ converters.
 
 [`prism_data_depacketizer`](../collective/prism_data_depacketizer.md) supplies
 aligned values. Formats are defined in
-[Wire formats, accumulator profiles, and policies](../../../1.protocol.md#wire-formats-accumulator-profiles-and-policies).
+[Wire formats and accumulator profiles](../../../1.protocol.md#wire-formats-and-accumulator-profiles).

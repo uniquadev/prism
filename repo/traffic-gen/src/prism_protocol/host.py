@@ -16,7 +16,6 @@ from typing import Iterable, Mapping, Protocol
 
 from .client import CollectiveGroupHandle, CollectiveOperationHandle
 from .constants import (
-    AccumulationPolicy,
     AccumulatorProfile,
     CollectiveSemantic,
     NextHopType,
@@ -99,7 +98,6 @@ class RankStartGrant:
     input_format: WireFormat
     output_format: WireFormat
     accumulator_profile: AccumulatorProfile
-    accumulation_policy: AccumulationPolicy
     element_count: int
     input_elements_per_chunk: int
     input_expected_chunks: int
@@ -377,7 +375,6 @@ class PrismHostCoordinator:
                 input_format=descriptor.input_format,
                 output_format=descriptor.output_format,
                 accumulator_profile=descriptor.accumulator_profile,
-                accumulation_policy=descriptor.accumulation_policy,
                 element_count=descriptor.element_count,
                 input_elements_per_chunk=descriptor.input_elements_per_chunk,
                 input_expected_chunks=descriptor.input_expected_chunks,

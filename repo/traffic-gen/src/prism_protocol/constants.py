@@ -247,12 +247,8 @@ PARTIAL_BYTES_PER_ELEMENT: dict[PartialWireFormat, int] = {
 class AccumulatorProfile(IntEnum):
     INVALID = 0x00
     FP32 = 0x01
-
-
-class AccumulationPolicy(IntEnum):
-    INVALID = 0x00
-    EAGER = 0x01
-    CONTRIBUTOR_ORDERED = 0x02
+    FP32_ORDERED = 0x02
+    KULISCH_FP32 = 0x03
 
 
 class SessionState(IntEnum):
@@ -512,7 +508,6 @@ def assert_unique_enum_values() -> None:
         WireFormat,
         PartialWireFormat,
         AccumulatorProfile,
-        AccumulationPolicy,
         TlvType,
         CapabilityKey,
         ResourceKey,

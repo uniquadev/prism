@@ -16,23 +16,23 @@ PRISM exposes reproducibility as a design space rather than as a single hard-cod
 
 | Strategy | Datapath idea | Reproducibility guarantee | Main cost |
 |---|---|---|---|
-| **Baseline FP32 accumulation** | Accumulate operands as packets arrive. | None beyond a particular run. | Lowest state and simplest datapath. |
-| **Contributor-ordered FP32 scheduling** | For each global element tile, apply the next ascending local Contributor ID as soon as it is available. | Bitwise reproducible for the same contributions and logical order. | Per-range ordering state and stalls behind a missing next contributor. |
-| **Kulisch-style / superaccumulator path** | Convert each finite input into an exact fixed-point deposit; merge deposits with integer arithmetic; round once at the end. | Order-independent exact finite summation before final rounding. | Wide accumulator state, banking, carry management, final normalization, exception policy. |
+| **FP32** | Accumulate admissible operands in arrival order. | None beyond a particular execution order. | Lowest state and simplest scheduling. |
+| **FP32_ORDERED** | For each global element tile, apply the next ascending local Contributor ID as soon as it is available. | Bitwise reproducible for the same contributions and logical order. | Per-range ordering state and stalls behind a missing next contributor. |
+| **KULISCH_FP32** | Convert each finite input into an exact fixed-point deposit; select the smallest available width that covers its format and term count; round once at the end. | Order-independent exact finite summation before final rounding. | Wide accumulator state, banking, carry management, final normalization, exception policy. |
 
 
 ```mermaid
 flowchart LR
-    S{Reduction mode}
+    S{Accumulator profile}
 
-    S -->|Baseline| B[Arrival-order FP32 add]
+    S -->|FP32| B[Arrival-order FP32 add]
     B --> O1[Fast but order-dependent]
 
-    S -->|Contributor-ordered FP32| C[Wait only for next Contributor ID]
+    S -->|FP32_ORDERED| C[Wait only for next Contributor ID]
     C --> D[Streamed FP32 fold by Contributor ID]
     D --> O2[Bitwise stable for fixed logical order]
 
-    S -->|Superaccumulator| E[Decode sign, exponent, significand]
+    S -->|KULISCH_FP32| E[Decode sign, exponent, significand]
     E --> F[Exact fixed-point deposit]
     F --> G[Normalize and round once]
     G --> O3[Order-independent finite sum]
@@ -45,8 +45,8 @@ The important distinction is that **deterministic scheduling fixes the order**, 
     This guarantee applies to the operands merged by one accumulator. In a
     multi-level tree, serializing an exact local partial to FP32 rounds at that
     hop. Global, tree-independent exactness requires a lossless partial-state
-    representation. Protocol 1.0 provides profile and tuple extension points
-    but does not yet assign that wire representation.
+    representation. Protocol 1.0 assigns the `KULISCH_FP32` profile family but
+    does not yet assign its lossless partial wire representation.
 
 ## Why try superaccumulators now?
 
@@ -64,7 +64,7 @@ Finally, exact or reproducible accumulation maps naturally to hardware research 
 
 !!! note "Design intent"
 
-    PRISM does not assume that a superaccumulator is always the best engineering choice. The point is to measure the Pareto frontier between a cheap deterministic FP32 path and a wider exact-accumulation path under switch-like constraints: line-rate packet ingress, bounded on-chip state, operation tracking, and packet-level scheduling.
+    PRISM does not assume that a superaccumulator is always the best engineering choice. The point is to measure the Pareto frontier between the cheaper `FP32_ORDERED` path and a wider exact-accumulation path under switch-like constraints: line-rate packet ingress, bounded on-chip state, operation tracking, and packet-level scheduling.
 
 ## Superaccumulator semantics
 
@@ -179,14 +179,18 @@ A deterministic FP32 reducer still rounds after every addition. It can make the 
 
 Preserving order can also fight the purpose of in-network computing. If reproducibility is achieved by gathering operands to a root, serializing the reduction, or forwarding intermediate FP32 accumulators across endpoints, the design may reintroduce communication and synchronization overhead that INC was meant to avoid. A local superaccumulator is attractive because it keeps the reproducibility cost inside the aggregation node rather than increasing the payload format on the wire.
 
-PRISM therefore compares both paths:
+PRISM therefore compares three profiles:
 
-1. **FP32 accumulator profile with CONTRIBUTOR_ORDERED policy**, useful as a lower-area baseline for scheduling determinism while still streaming ready ranges.
-2. **Future superaccumulator profiles**, useful for studying order-independent finite summation and the hardware cost of exact accumulation.
+1. **FP32**, the smallest arrival-ordered baseline.
+2. **FP32_ORDERED**, which defines ascending Contributor-ID order while still streaming ready ranges.
+3. **KULISCH_FP32**, the exact-accumulator family for studying order-independent finite summation and its hardware cost.
 
-Accumulator representation and scheduling policy are separate protocol choices:
-an exact backend need not inherit FP32 ordering constraints, and ordered FP32
-does not imply a whole-chunk wait-all barrier.
+Each profile defines both its state representation and contributor-update rule.
+`FP32_ORDERED` waits only for the next contributor to each range, not for a
+whole-chunk wait-all barrier. `KULISCH_FP32` derives the required width from the
+Reduction Operator, input format, and Maximum Reduction Terms, then selects the
+smallest compiled configuration that covers it. Protocol 1.0 uses the scalar
+`SUM` bound; a future dot-product operation requires the wider product bound.
 
 ## Expected outcome
 

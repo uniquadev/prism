@@ -38,6 +38,6 @@ to later modules.
 ## Related modules and concepts
 
 The field layouts are fixed by [Common frame format](../../../1.protocol.md#common-frame-format)
-and [Protocol 1.0 packet layouts](../../../1.protocol.md#protocol-10-packet-layouts).
+and [Packet layouts](../../../1.protocol.md#packet-layouts).
 [`prism_forwarding_unit`](../../units/prism_forwarding_unit.md) consumes the
 parsed output.

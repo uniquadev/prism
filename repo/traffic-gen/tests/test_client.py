@@ -6,7 +6,6 @@ from dataclasses import replace
 from fakes import FakeSwitchClient
 from prism_protocol.client import PrismManager
 from prism_protocol.constants import (
-    AccumulationPolicy,
     AccumulatorProfile,
     CollectiveSemantic,
     ControlCommand,
@@ -49,8 +48,7 @@ def operation_descriptor() -> OperationDescriptor:
         semantic=CollectiveSemantic.REDUCE,
         reduction_operator=ReductionOperator.SUM,
         input_format=WireFormat.FP32,
-        accumulator_profile=AccumulatorProfile.FP32,
-        accumulation_policy=AccumulationPolicy.CONTRIBUTOR_ORDERED,
+        accumulator_profile=AccumulatorProfile.FP32_ORDERED,
         partial_format=PartialWireFormat.FP32,
         output_format=WireFormat.FP32,
         element_count=16,

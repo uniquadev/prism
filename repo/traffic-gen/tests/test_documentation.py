@@ -5,7 +5,6 @@ import unittest
 from pathlib import Path
 
 from prism_protocol.constants import (
-    AccumulationPolicy,
     AccumulatorProfile,
     AllocationKey,
     CapabilityKey,
@@ -46,7 +45,6 @@ class DocumentationConsistencyTests(unittest.TestCase):
             (WireFormat, 2, ""),
             (PartialWireFormat, 2, ""),
             (AccumulatorProfile, 2, ""),
-            (AccumulationPolicy, 2, ""),
             (ProgressPeerKind, 2, ""),
             (ProgressReason, 2, ""),
             (SecurityProfile, 2, ""),

@@ -2,8 +2,9 @@
 
 **Module class:** `COMPONENT / ARITHMETIC`
 
-`prism_fp32_output_converter` finalizes FP32 accumulator values as FP16, BF16,
-or FP32 wire elements. Other accumulator profiles provide their own finalizer.
+`prism_fp32_output_converter` finalizes `FP32` or `FP32_ORDERED` accumulator
+values as FP16, BF16, or FP32 wire elements. Other accumulator representations
+provide their own finalizer.
 
 ## Contracts
 

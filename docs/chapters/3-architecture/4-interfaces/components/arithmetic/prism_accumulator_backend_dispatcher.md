@@ -9,7 +9,7 @@ operations.
 ## Contracts
 
 - **Scheduled work — input, up to 4 × (192-bit metadata + 528-bit V1 payload)
-  with valid/ready:** carries profile, operator, policy, range, contributor, and
+  with valid/ready:** carries profile, operator, range, contributor, and
   normalized values.
 
 - **FP32 backend — output/input, up to 4 × 1064/544-bit numeric payload plus

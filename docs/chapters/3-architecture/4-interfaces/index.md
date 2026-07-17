@@ -59,7 +59,7 @@ organization.
 3. [`prism_management_unit`](units/prism_management_unit.md) — Protocol 1.0
    CONTROL, capabilities, setup, and context ownership.
 4. [`prism_collective_unit`](units/prism_collective_unit.md) — contribution
-   acceptance, policy-controlled accumulation, range completion, and output
+   acceptance, profile-defined accumulation, range completion, and output
    packetization.
 5. [`prism_result_delivery_unit`](units/prism_result_delivery_unit.md) — REDUCE
    routing, ALLREDUCE replication, and received-result handling.

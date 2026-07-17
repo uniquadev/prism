@@ -4,7 +4,7 @@
 
 `prism_collective_unit` accepts validated DATA, maps each packet to global
 element ranges, applies it exactly once through the selected accumulator
-backend and policy, and emits packetized upstream partials or locally completed
+profile, and emits packetized upstream partials or locally completed
 results. REDUCE and ALLREDUCE share this unit; result routes distinguish them.
 
 ## Contracts
@@ -38,9 +38,9 @@ results. REDUCE and ALLREDUCE share this unit; result routes distinguish them.
 
 ## Contract behavior
 
-- EAGER issues any ready dependency-free tile. CONTRIBUTOR_ORDERED issues each
-  global element tile in ascending Contributor-ID order; neither policy imposes
-  a whole-operation barrier.
+- `FP32_ORDERED` issues each global element tile in ascending Contributor-ID
+  order. It waits only for the next contributor to that tile, not for a
+  whole-operation barrier.
 - Up to eight active operations may interleave in the default build. They share
   backend bandwidth and sixteen live ranges.
 - Input DATA Chunk Index is never copied to generated partial or RES. The

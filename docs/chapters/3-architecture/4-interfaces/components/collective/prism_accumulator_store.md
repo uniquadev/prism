@@ -22,7 +22,7 @@ storage subsystem, not one fixed 512-bit FP32 RAM.
 
 - **Extension state ports — input/output, generated per enabled accumulator
   profile:** carry that profile's declared state width and element mask. A
-  future Kulisch store can use wider BRAM/URAM words without widening FP32 or
+  Kulisch-family stores can use wider BRAM/URAM words without widening FP32 or
   common metadata ports.
 
 - **Packetizer read — input/output, one 96-bit address, fixed response metadata,

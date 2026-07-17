@@ -19,7 +19,6 @@ from .constants import (
     CHUNK_PAYLOAD_BYTES,
     MAX_BITMAP_BYTES,
     MAX_CHUNKS,
-    AccumulationPolicy,
     AccumulatorProfile,
     AllocationKey,
     AccumulatorRangeState,
@@ -69,7 +68,6 @@ def _mac(value: bytes) -> bytes:
 class ArithmeticTuple:
     input_format: WireFormat
     accumulator_profile: AccumulatorProfile
-    accumulation_policy: AccumulationPolicy
     partial_format: PartialWireFormat
     output_format: WireFormat
 
@@ -77,22 +75,47 @@ class ArithmeticTuple:
         return (
             int(self.input_format) << 56
             | int(self.accumulator_profile) << 48
-            | int(self.accumulation_policy) << 40
-            | int(self.partial_format) << 32
-            | int(self.output_format) << 24
+            | int(self.partial_format) << 40
+            | int(self.output_format) << 32
         )
 
     @classmethod
     def decode(cls, value: int) -> "ArithmeticTuple":
-        if value & 0xFFFFFF:
+        if value & 0xFFFFFFFF:
             raise ValueError("non-zero arithmetic tuple reserved bits")
         return cls(
             WireFormat((value >> 56) & 0xFF),
             AccumulatorProfile((value >> 48) & 0xFF),
-            AccumulationPolicy((value >> 40) & 0xFF),
-            PartialWireFormat((value >> 32) & 0xFF),
-            WireFormat((value >> 24) & 0xFF),
+            PartialWireFormat((value >> 40) & 0xFF),
+            WireFormat((value >> 32) & 0xFF),
         )
+
+
+def required_accumulator_state_bits(
+    profile: AccumulatorProfile,
+    reduction_operator: ReductionOperator,
+    input_format: WireFormat,
+    max_reduction_terms: int,
+) -> int:
+    if max_reduction_terms <= 0:
+        raise ValueError("maximum reduction terms must be positive")
+    if reduction_operator != ReductionOperator.SUM:
+        raise ValueError("unsupported accumulator operation")
+    if profile in (AccumulatorProfile.FP32, AccumulatorProfile.FP32_ORDERED):
+        return 32
+    if profile != AccumulatorProfile.KULISCH_FP32:
+        raise ValueError("unsupported accumulator profile")
+    base_widths = {
+        WireFormat.INT8: 8,
+        WireFormat.FP16: 41,
+        WireFormat.BF16: 262,
+        WireFormat.FP32: 278,
+    }
+    try:
+        base_width = base_widths[input_format]
+    except KeyError as error:
+        raise ValueError("unsupported Kulisch input format") from error
+    return base_width + (max_reduction_terms - 1).bit_length()
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,7 +352,6 @@ class OperationDescriptor:
     reduction_operator: ReductionOperator
     input_format: WireFormat
     accumulator_profile: AccumulatorProfile
-    accumulation_policy: AccumulationPolicy
     partial_format: PartialWireFormat
     output_format: WireFormat
     element_count: int
@@ -370,7 +392,6 @@ class OperationDescriptor:
         return ArithmeticTuple(
             self.input_format,
             self.accumulator_profile,
-            self.accumulation_policy,
             self.partial_format,
             self.output_format,
         )
@@ -384,8 +405,6 @@ class OperationDescriptor:
             raise ValueError("invalid partial wire format")
         if self.accumulator_profile == AccumulatorProfile.INVALID:
             raise ValueError("invalid accumulator profile")
-        if self.accumulation_policy == AccumulationPolicy.INVALID:
-            raise ValueError("invalid accumulation policy")
         if self.element_count <= 0:
             raise ValueError("invalid operation geometry")
         if self.max_reduction_terms <= 0 or self.max_reduction_terms >= (1 << 32):
@@ -421,10 +440,10 @@ class OperationDescriptor:
             int(self.reduction_operator),
             int(self.input_format),
             int(self.accumulator_profile),
-            int(self.accumulation_policy),
             int(self.partial_format),
             int(self.output_format),
             flags,
+            0,
             self.element_count,
             self.max_reduction_terms,
             self.timeout_ms,
@@ -444,10 +463,10 @@ class OperationDescriptor:
             operator,
             input_format,
             accumulator_profile,
-            accumulation_policy,
             partial_format,
             output_format,
             flags,
+            reserved_byte,
             element_count,
             max_terms,
             timeout_ms,
@@ -457,7 +476,7 @@ class OperationDescriptor:
             retry_limit,
             reserved,
         ) = _OPERATION_DESCRIPTOR.unpack(value)
-        if reserved or flags & ~0x01:
+        if reserved_byte or reserved or flags & ~0x01:
             raise ValueError("non-zero operation descriptor reserved fields")
         routes = tuple(result_range_routes)
         if route_count != len(routes):
@@ -467,7 +486,6 @@ class OperationDescriptor:
             ReductionOperator(operator),
             WireFormat(input_format),
             AccumulatorProfile(accumulator_profile),
-            AccumulationPolicy(accumulation_policy),
             PartialWireFormat(partial_format),
             WireFormat(output_format),
             element_count,
@@ -621,8 +639,8 @@ class Capabilities:
             max_selective_ack_window=1024,
             collective_semantics=frozenset({CollectiveSemantic.REDUCE, CollectiveSemantic.ALLREDUCE}),
             reduction_operators=frozenset({ReductionOperator.SUM}),
-            arithmetic_tuples=frozenset({ArithmeticTuple(WireFormat.FP32, AccumulatorProfile.FP32, AccumulationPolicy.CONTRIBUTOR_ORDERED, PartialWireFormat.FP32, WireFormat.FP32)}),
-            accumulator_profiles=frozenset({AccumulatorProfileCapability(AccumulatorProfile.FP32, 32, (1 << 32) - 1, True)}),
+            arithmetic_tuples=frozenset({ArithmeticTuple(WireFormat.FP32, AccumulatorProfile.FP32_ORDERED, PartialWireFormat.FP32, WireFormat.FP32)}),
+            accumulator_profiles=frozenset({AccumulatorProfileCapability(AccumulatorProfile.FP32_ORDERED, 32, (1 << 32) - 1, True)}),
         )
         values.update(overrides)
         return cls(**values)
@@ -646,11 +664,18 @@ class Capabilities:
             raise PrismError(Status.NO_ROUTE_RESOURCE, "too many result routes")
         if descriptor.arithmetic_tuple not in self.arithmetic_tuples:
             raise PrismError(Status.UNSUPPORTED_ARITHMETIC_TUPLE, "arithmetic tuple is not advertised")
-        profile = next(
-            (item for item in self.accumulator_profiles if item.profile == descriptor.accumulator_profile),
-            None,
+        required_state_bits = required_accumulator_state_bits(
+            descriptor.accumulator_profile,
+            descriptor.reduction_operator,
+            descriptor.input_format,
+            descriptor.max_reduction_terms,
         )
-        if profile is None or descriptor.max_reduction_terms > profile.max_reduction_terms:
+        if not any(
+            item.profile == descriptor.accumulator_profile
+            and descriptor.max_reduction_terms <= item.max_reduction_terms
+            and required_state_bits <= item.state_bits_per_element
+            for item in self.accumulator_profiles
+        ):
             raise PrismError(Status.UNSUPPORTED_ARITHMETIC_TUPLE, "accumulator profile cannot cover the requested reduction terms")
 
     def validate_group(self, descriptor: GroupDescriptor) -> None:

@@ -9,7 +9,6 @@ from prism_protocol.constants import (
     DATA_HEADER_BYTES,
     PROGRESS_HEADER_BYTES,
     RESULT_HEADER_BYTES,
-    AccumulationPolicy,
     AccumulatorProfile,
     CollectiveSemantic,
     ControlCommand,
@@ -151,7 +150,7 @@ class WireLayoutTests(unittest.TestCase):
         with self.assertRaises(ProtocolDecodeError):
             ProgressHeader.unpack(bytes(malformed))
 
-    def test_tlv_round_trip_alignment_and_unknown_policy(self) -> None:
+    def test_tlv_round_trip_alignment_and_unknown_handling(self) -> None:
         tlvs = (Tlv(TlvType.ERROR_DETAIL, b"abc"), Tlv.u64(TlvType.JOB_ID, 9))
         encoded = pack_tlvs(tlvs)
         self.assertEqual(len(encoded) % 8, 0)
@@ -226,12 +225,11 @@ class WireLayoutTests(unittest.TestCase):
         )
         arithmetic = ArithmeticTuple(
             WireFormat.FP32,
-            AccumulatorProfile.FP32,
-            AccumulationPolicy.CONTRIBUTOR_ORDERED,
+            AccumulatorProfile.FP32_ORDERED,
             PartialWireFormat.FP32,
             WireFormat.FP32,
         )
-        self.assertEqual(arithmetic.encode(), 0x0401020404000000)
+        self.assertEqual(arithmetic.encode(), 0x0402040400000000)
         self.assertEqual(ArithmeticTuple.decode(arithmetic.encode()), arithmetic)
         with self.assertRaisesRegex(ValueError, "reserved bits"):
             ArithmeticTuple.decode(arithmetic.encode() | 1)
@@ -241,8 +239,7 @@ class WireLayoutTests(unittest.TestCase):
             CollectiveSemantic.REDUCE,
             ReductionOperator.SUM,
             WireFormat.FP32,
-            AccumulatorProfile.FP32,
-            AccumulationPolicy.CONTRIBUTOR_ORDERED,
+            AccumulatorProfile.FP32_ORDERED,
             PartialWireFormat.FP32,
             WireFormat.FP32,
             element_count=1000,
@@ -256,8 +253,12 @@ class WireLayoutTests(unittest.TestCase):
         )
         encoded = descriptor.pack()
         self.assertEqual(len(encoded), 32)
-        self.assertEqual(encoded[2:8], bytes((0x04, 0x01, 0x02, 0x04, 0x04, 0x01)))
+        self.assertEqual(encoded[2:8], bytes((0x04, 0x02, 0x04, 0x04, 0x01, 0x00)))
         self.assertEqual(OperationDescriptor.unpack(encoded, descriptor.result_range_routes), descriptor)
+        malformed = bytearray(encoded)
+        malformed[7] = 1
+        with self.assertRaisesRegex(ValueError, "reserved fields"):
+            OperationDescriptor.unpack(bytes(malformed), descriptor.result_range_routes)
         malformed = bytearray(encoded)
         malformed[31] = 1
         with self.assertRaises(ValueError):

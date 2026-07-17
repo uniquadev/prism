@@ -3,14 +3,15 @@
 **Module class:** `COMPONENT / COLLECTIVE`
 
 `prism_accumulation_scheduler` selects eligible global-element tiles across
-active operations. It enforces the operation's accumulation policy, resolves
-bank and backend structural conflicts, and interlocks accumulator dependencies.
+active operations. It enforces the accumulator profile's update semantics,
+resolves bank and backend structural conflicts, and interlocks accumulator
+dependencies.
 
 ## Contracts
 
 - **Normalized work — input, 4 × (192-bit metadata + 528-bit V1 payload) with
   valid/ready:** accepts up to four tiles produced by the two ingress
-  normalizers. Input queues retain profile, policy, contributor, and global
+  normalizers. Input queues retain profile, contributor, and global
   range identity.
 
 - **Accumulator state lookup — output/input, up to 4 × 96-bit address and
@@ -32,14 +33,14 @@ bank and backend structural conflicts, and interlocks accumulator dependencies.
   contributor, global First Element, and flags.
 
 - **Scheduler state — output, 192 bits:** exposes per-profile ready work,
-  policy waits, bank conflicts, dependency stalls, active operations,
+  ordering waits, bank conflicts, dependency stalls, active operations,
   outstanding tags, and sticky ordering faults.
 
 ## Contract behavior
 
-- EAGER chooses any ready tile; the first accepted contributor initializes
-  state without adding zero. CONTRIBUTOR_ORDERED requires the stored next
-  Contributor ID for that range.
+- `FP32_ORDERED` requires the stored next Contributor ID for each range; its
+  first contributor initializes state without adding zero. Future profiles
+  define their own eligibility rule.
 - A tile cannot read stale data. A matching in-flight result is forwarded or
   awaited; unrelated operations and ranges remain eligible.
 - Fair arbitration prevents one operation from permanently occupying a shared

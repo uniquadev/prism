@@ -35,23 +35,23 @@ un'unica scelta aritmetica codificata rigidamente.
 
 | Strategia | Idea per il datapath | Garanzia di riproducibilità | Costo principale |
 |---|---|---|---|
-| **Accumulazione FP32 di base** | Accumula gli operandi nell'ordine di arrivo dei pacchetti. | Nessuna oltre la singola esecuzione. | Stato minimo e datapath più semplice. |
-| **Scheduling FP32 per contributore** | Per ogni tile globale applica il successivo Contributor ID locale crescente appena disponibile. | Riproducibilità bitwise per gli stessi contributi e lo stesso ordine. | Stato d'ordine per range e attesa del successivo contributore mancante. |
-| **Percorso in stile Kulisch / superaccumulatore** | Mappa ogni input finito in una rappresentazione fixed-point esatta, combina i contributi con aritmetica intera e arrotonda una sola volta alla fine. | Somma finita esatta e indipendente dall'ordine prima dell'arrotondamento finale. | Stato dell'accumulatore ampio, banking, gestione dei riporti, normalizzazione finale e politica delle eccezioni. |
+| **FP32** | Accumula gli operandi ammissibili in ordine di arrivo. | Nessuna oltre un determinato ordine di esecuzione. | Stato minimo e scheduling più semplice. |
+| **FP32_ORDERED** | Per ogni tile globale applica il successivo Contributor ID locale crescente appena disponibile. | Riproducibilità bitwise per gli stessi contributi e lo stesso ordine. | Stato d'ordine per range e attesa del successivo contributore mancante. |
+| **KULISCH_FP32** | Mappa ogni input finito in una rappresentazione fixed-point esatta, seleziona la minima larghezza disponibile adatta al formato e al numero di termini e arrotonda una sola volta alla fine. | Somma finita esatta e indipendente dall'ordine prima dell'arrotondamento finale. | Stato dell'accumulatore ampio, banking, gestione dei riporti, normalizzazione finale e politica delle eccezioni. |
 
 
 ```mermaid
 flowchart LR
-    S{Modalità di riduzione}
+    S{Profilo accumulatore}
 
-    S -->|Base| B[Somma FP32 in ordine di arrivo]
+    S -->|FP32| B[Somma FP32 in ordine di arrivo]
     B --> O1[Veloce ma dipendente dall'ordine]
 
-    S -->|FP32 ordinato| C[Attesa del solo Contributor ID successivo]
+    S -->|FP32_ORDERED| C[Attesa del solo Contributor ID successivo]
     C --> D[Fold FP32 streaming per Contributor ID crescente]
     D --> O2[Bitwise stabile per un ordine logico fisso]
 
-    S -->|Superaccumulatore| E[Decodifica segno, esponente e significando]
+    S -->|KULISCH_FP32| E[Decodifica segno, esponente e significando]
     E --> F[Rappresentazione fixed-point esatta]
     F --> G[Normalizzazione e singolo arrotondamento]
     G --> O3[Somma finita indipendente dall'ordine]
@@ -68,8 +68,9 @@ una riduzione collettiva indipendente dall'ordine.
     La garanzia vale per gli operandi combinati da un singolo accumulatore. In
     un albero multi-livello, serializzare un parziale esatto in FP32 arrotonda a
     quell'hop. L'esattezza globale indipendente dall'albero richiede una
-    rappresentazione lossless dello stato parziale. Protocol 1.0 riserva una
-    punti di estensione per profili e tuple, ma non assegna ancora quel formato.
+    rappresentazione lossless dello stato parziale. Protocol 1.0 assegna la
+    famiglia di profili `KULISCH_FP32`, ma non ancora il relativo formato wire
+    lossless per i parziali.
 
 ## Perché sperimentare ora con i superaccumulatori?
 
@@ -89,7 +90,7 @@ Tre sviluppi rendono oggi significativa questa domanda:
   dedicato permette invece di misurare direttamente questa funzione.
 
 La domanda hardware è dunque quantitativa: quale frontiera di Pareto emerge tra
-un percorso FP32 deterministico e un superaccumulatore, considerando area,
+un percorso `FP32_ORDERED` e un superaccumulatore, considerando area,
 BRAM/URAM, banking, riporti, initiation interval, Fmax, backpressure e latenza
 dell'arrotondamento finale?
 
@@ -208,11 +209,16 @@ numero di rank, nel chunking o nelle somme parziali possono ancora cambiare il
 risultato. Il superaccumulatore, invece, deposita esattamente gli operandi finiti
 e arrotonda una sola volta.
 
-PRISM confronta quindi il **profilo accumulatore FP32 con policy
-CONTRIBUTOR_ORDERED**, come riferimento a minore area, con futuri profili di
-accumulazione esatta indipendenti dall'ordine. Rappresentazione e policy sono
-scelte separate: l'ordine FP32 non impone una barriera wait-all sull'intero
-chunk, e un backend esatto non deve ereditare quella policy.
+PRISM confronta quindi `FP32`, il riferimento minimo in ordine di arrivo;
+`FP32_ORDERED`, che applica i Contributor ID in ordine crescente; e
+`KULISCH_FP32`, la famiglia di accumulatori esatti per input fino a FP32. Ogni
+profilo definisce sia la rappresentazione sia la regola di aggiornamento.
+`FP32_ORDERED` attende solo il contributore successivo per ciascun range, non
+una barriera wait-all sull'intero chunk. `KULISCH_FP32` deriva la larghezza da
+Reduction Operator, formato di input e Maximum Reduction Terms, quindi sceglie
+la minima configurazione compilata sufficiente. Protocol 1.0 usa il bound della
+somma scalare; un futuro prodotto scalare richiede il bound più ampio dei
+prodotti.
 
 ## Risultato atteso
 
