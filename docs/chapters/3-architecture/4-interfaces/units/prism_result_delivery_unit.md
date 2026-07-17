@@ -16,13 +16,17 @@ validated incoming RES and originates the next hop on a result-delivery node.
 - **Validated incoming RES — input, 384-bit packet descriptor + valid/ready:**
   accepts one closed, generation-checked output-format packet from ingress.
 
-- **Operation and route lookup — output/input, 32-bit slot request, 544-bit
-  operation context, and repeated 128-bit routes + 8-bit status:** obtains the
-  semantic and disjoint RES Chunk Index route mapping atomically.
+- **Operation and result-range lookup — output/input, derived request/response
+  types:** obtains the semantic and the one disjoint RES Chunk Index range that
+  selects a Replication Group ID.
+
+- **Result-destination lookup — output/input, derived request/response types:**
+  enumerates the concrete egress, Result Path ID, next-hop type, and MAC data in
+  the selected replication group.
 
 - **Replication command — output, 256-bit `prism_replica_cmd_t` +
-  valid/ready:** names output Chunk Index, immutable payload, route range, and
-  RES flags.
+  valid/ready:** names output Chunk Index, immutable payload, selected
+  Replication Group ID, and RES flags.
 
 - **Incoming-result access — output/input, 32-bit read command, one
   `prism_axis`, and 16-bit release handle:** retains received bytes while

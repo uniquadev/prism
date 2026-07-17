@@ -11,7 +11,6 @@ site_dir: site
 #   - docs/includes
 
 draft_docs: |
-  /drafts/test.md
   /chapters/1-introduction/index.md
   **/*.example.md
 
@@ -102,8 +101,8 @@ plugins:
             "3. Architecture": "3. Architettura"
             "3.1 Protocol": "3.1 Protocollo"
             "3.2 Pipeline": "3.2 Pipeline"
-            "3.3 Interfaces": "3.3 Interfacce"
-            "3.4 Register Map": "3.4 Mappa dei registri"
+            "3.4 Parameters": "3.4 Parametri"
+            "3.5 Interfaces": "3.5 Interfacce"
             "4. Results": "4. Risultati"
             "4.1 Verification Evidence": "4.1 Evidenze di verifica"
             "5. Future Works": "5. Sviluppi futuri"

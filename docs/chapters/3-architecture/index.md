@@ -36,3 +36,15 @@ defined by the protocol.
     down through main units and components.
 
 </div>
+
+## Design and implementation status
+
+The documentation uses present tense for normative protocol rules and selected
+architecture contracts. That tense does **not** by itself mean that matching RTL
+exists.
+
+The [Protocol](1.protocol.md) owns wire meaning and interoperability. The
+[Pipeline](2.pipeline.md) and [Interfaces](4-interfaces/index.md) own selected
+architecture. [Parameters](4.parameters.md) owns compiled capacities and
+feature selection. Measured implementation and verification evidence belongs
+only under [Results](../4-results/index.md).

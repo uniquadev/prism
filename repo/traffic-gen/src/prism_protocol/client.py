@@ -633,9 +633,9 @@ class PrismManager:
         if set(group_descriptors) != switch_ids:
             raise ValueError("group and operation descriptors must cover the same switch tree")
 
-        geometries = {(item.element_count, item.elements_per_chunk) for item in descriptors.values()}
-        if len(geometries) != 1:
-            raise ValueError("all operation nodes must use identical element/chunk geometry")
+        element_counts = {item.element_count for item in descriptors.values()}
+        if len(element_counts) != 1:
+            raise ValueError("all operation nodes must use the same Element Count")
 
         semantics = {(item.semantic, item.reduction_operator) for item in descriptors.values()}
         if len(semantics) != 1:
@@ -698,7 +698,7 @@ class PrismManager:
 
         for switch_id, descriptor in descriptors.items():
             group_ids = {group.group_id for group in group_descriptors[switch_id].replication_groups}
-            if any(route.replication_group_id not in group_ids for route in descriptor.result_routes):
+            if any(route.replication_group_id not in group_ids for route in descriptor.result_range_routes):
                 raise ValueError("result route references an unknown local replication group")
 
     @staticmethod

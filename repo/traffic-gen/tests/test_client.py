@@ -6,7 +6,8 @@ from dataclasses import replace
 from fakes import FakeSwitchClient
 from prism_protocol.client import PrismManager
 from prism_protocol.constants import (
-    AccumulatorMode,
+    AccumulationPolicy,
+    AccumulatorProfile,
     CollectiveSemantic,
     ControlCommand,
     GroupState,
@@ -31,16 +32,12 @@ def group_descriptors() -> dict[str, GroupDescriptor]:
         "s0": GroupDescriptor(
             node_role=NodeRole.ROOT,
             expected_local_contributors=1,
-            max_replication_groups=0,
-            max_replication_entries=0,
             contributors=(ContributorBinding(0, 7, bytes.fromhex("020000000100")),),
             upstream=UpstreamAction(False, 0, 0, bytes(6)),
         ),
         "l0": GroupDescriptor(
             node_role=NodeRole.LEAF,
             expected_local_contributors=1,
-            max_replication_groups=0,
-            max_replication_entries=0,
             contributors=(ContributorBinding(0, 1, bytes.fromhex("020000000001")),),
             upstream=UpstreamAction(True, 0, 3, bytes.fromhex("0200000000a0")),
         ),
@@ -52,11 +49,11 @@ def operation_descriptor() -> OperationDescriptor:
         semantic=CollectiveSemantic.REDUCE,
         reduction_operator=ReductionOperator.SUM,
         input_format=WireFormat.FP32,
-        accumulator_mode=AccumulatorMode.DETERMINISTIC_FP32,
+        accumulator_profile=AccumulatorProfile.FP32,
+        accumulation_policy=AccumulationPolicy.CONTRIBUTOR_ORDERED,
         partial_format=PartialWireFormat.FP32,
         output_format=WireFormat.FP32,
         element_count=16,
-        elements_per_chunk=4,
         max_reduction_terms=1,
         requested_window_chunks=2,
         requested_replay_slots=2,

@@ -7,9 +7,12 @@ from pathlib import Path
 from prism_protocol.constants import (
     MAX_BITMAP_BYTES,
     MAX_CHUNKS,
-    AccumulatorMode,
+    AccumulationPolicy,
+    AccumulatorProfile,
     CollectiveSemantic,
     FeatureFlag,
+    NextHopType,
+    NodeRole,
     OperationState,
     PartialWireFormat,
     ReductionOperator,
@@ -20,15 +23,20 @@ from prism_protocol.constants import (
 from prism_protocol.errors import GenerationWrapRequiresNewJob, InvalidHandleError, PrismError
 from prism_protocol.model import (
     Capabilities,
+    ContributorBinding,
     GenerationStore,
+    GroupDescriptor,
+    NextHopEntry,
     OperationDescriptor,
     PhaseBitmap,
     PhaseBitmapAllocation,
     ReliableOperationModel,
     ReliableSender,
+    ReplicationGroup,
     ReplayCache,
     ResourceAllocation,
     ResourcePool,
+    UpstreamAction,
 )
 from prism_protocol.wire import OperationIdentity
 
@@ -40,29 +48,72 @@ def identity(generation: int) -> OperationIdentity:
 def operation_descriptor(*, result_role: bool = False, requested_slots: int = 4, chunks: int = 4) -> OperationDescriptor:
     routes = ()
     if result_role:
-        from prism_protocol.model import ResultRoute
+        from prism_protocol.model import ResultRangeRoute
 
-        routes = (ResultRoute(0, chunks - 1, 1),)
+        routes = (ResultRangeRoute(0, chunks - 1, 1),)
     return OperationDescriptor(
         CollectiveSemantic.REDUCE,
         ReductionOperator.SUM,
         WireFormat.FP32,
-        AccumulatorMode.DETERMINISTIC_FP32,
+        AccumulatorProfile.FP32,
+        AccumulationPolicy.CONTRIBUTOR_ORDERED,
         PartialWireFormat.FP32,
         WireFormat.FP32,
-        element_count=chunks,
-        elements_per_chunk=1,
+        element_count=chunks * 368,
         max_reduction_terms=4,
         requested_window_chunks=requested_slots,
         requested_replay_slots=4,
         timeout_ms=100,
         retry_limit=2,
         result_delivery_role=result_role,
-        result_routes=routes,
+        result_range_routes=routes,
+    )
+
+
+def group_descriptor(*, destination_count: int = 1) -> GroupDescriptor:
+    destinations = tuple(
+        NextHopEntry(index, index + 1, NextHopType.RANK, bytes.fromhex(f"0200000000{index + 1:02x}"))
+        for index in range(destination_count)
+    )
+    return GroupDescriptor(
+        NodeRole.SINGLE,
+        1,
+        (ContributorBinding(0, 1, bytes.fromhex("020000000001")),),
+        UpstreamAction(False, 0, 0, bytes(6)),
+        (ReplicationGroup(1, destinations),),
     )
 
 
 class BitmapAndAdmissionTests(unittest.TestCase):
+    def test_group_descriptor_reserves_legacy_quota_bytes(self) -> None:
+        descriptor = group_descriptor()
+        encoded = descriptor.descriptor_tlv().value
+        self.assertEqual(encoded, bytes.fromhex("0400000100000000"))
+        malformed = bytearray(encoded)
+        malformed[7] = 1
+        with self.assertRaisesRegex(ValueError, "reserved field"):
+            GroupDescriptor.unpack_descriptor(
+                bytes(malformed),
+                descriptor.contributors,
+                descriptor.upstream,
+                descriptor.replication_groups,
+            )
+
+    def test_group_admission_uses_actual_replication_records(self) -> None:
+        descriptor = group_descriptor(destination_count=2)
+        pool = ResourcePool(Capabilities.reference(max_replication_groups=1, max_result_destinations_per_group=2))
+        before = pool.snapshot()
+        reservation = pool.stage_group((1, 1), descriptor)
+        after = pool.snapshot()
+        self.assertEqual((reservation.replication_groups, reservation.replication_entries), (1, 2))
+        self.assertEqual(before.free_replication_groups - after.free_replication_groups, 1)
+        self.assertEqual(before.free_replication_entries - after.free_replication_entries, 2)
+
+        limited = ResourcePool(Capabilities.reference(max_replication_groups=1, max_result_destinations_per_group=1))
+        with self.assertRaises(PrismError) as caught:
+            limited.stage_group((1, 1), descriptor)
+        self.assertEqual(caught.exception.status, Status.NO_REPLICATION_RESOURCE)
+
     def test_reserved_feature_bits_are_rejected(self) -> None:
         advertised = Capabilities.reference(feature_flags=FeatureFlag(0x80))
         with self.assertRaisesRegex(ValueError, "reserved feature bits"):
@@ -72,7 +123,7 @@ class BitmapAndAdmissionTests(unittest.TestCase):
         allocation = ResourceAllocation(
             operation_slots=1,
             phase_bitmap_bytes=17,
-            aggregation_slots=4,
+            accumulator_ranges=4,
             replay_output_slots=8,
         )
         tlv = allocation.to_tlv(TlvType.GRANTED_RESOURCES)
@@ -108,10 +159,10 @@ class BitmapAndAdmissionTests(unittest.TestCase):
         pool.prepare_operation((1, 1, 1, 1), operation_descriptor())
         after = pool.snapshot()
         self.assertGreater(before.free_phase_bitmap_bytes, after.free_phase_bitmap_bytes)
-        self.assertEqual(before.free_prepared_operation_slots, after.free_prepared_operation_slots + 1)
+        self.assertEqual(before.free_operation_contexts, after.free_operation_contexts + 1)
 
     def test_no_operation_slot(self) -> None:
-        pool = ResourcePool(Capabilities.reference(max_prepared_operations=1))
+        pool = ResourcePool(Capabilities.reference(max_operation_contexts=1))
         pool.prepare_operation((1, 1, 1, 1), operation_descriptor())
         with self.assertRaises(PrismError) as caught:
             pool.prepare_operation((1, 1, 2, 1), operation_descriptor())
@@ -124,12 +175,12 @@ class BitmapAndAdmissionTests(unittest.TestCase):
         self.assertEqual(caught.exception.status, Status.NO_BITMAP_MEMORY)
 
     def test_insufficient_active_slots_and_smaller_grant(self) -> None:
-        pool = ResourcePool(Capabilities.reference(max_active_aggregation_slots_global=2, max_active_aggregation_slots_per_operation=2))
+        pool = ResourcePool(Capabilities.reference(max_active_accumulator_ranges_global=2, max_active_accumulator_ranges_per_operation=2))
         reservation = pool.prepare_operation((1, 1, 1, 1), operation_descriptor(requested_slots=8))
-        self.assertEqual(reservation.aggregation_slots, 2)
+        self.assertEqual(reservation.accumulator_ranges, 2)
         with self.assertRaises(PrismError) as caught:
             pool.prepare_operation((1, 1, 2, 1), operation_descriptor())
-        self.assertEqual(caught.exception.status, Status.NO_AGGREGATION_SLOT)
+        self.assertEqual(caught.exception.status, Status.NO_ACCUMULATOR_RANGE)
 
     def test_release_frees_exact_allocation(self) -> None:
         pool = ResourcePool(Capabilities.reference())
@@ -140,7 +191,7 @@ class BitmapAndAdmissionTests(unittest.TestCase):
         after = pool.snapshot()
         self.assertEqual(released, reservation)
         self.assertEqual(before.free_phase_bitmap_bytes, after.free_phase_bitmap_bytes)
-        self.assertEqual(before.free_aggregation_slots, after.free_aggregation_slots)
+        self.assertEqual(before.free_accumulator_ranges, after.free_accumulator_ranges)
         self.assertEqual(before.free_phase_bitmap_bytes - during.free_phase_bitmap_bytes, reservation.bitmap_bytes)
 
 

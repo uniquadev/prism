@@ -21,7 +21,8 @@ issue four normalized FP32 tiles per cycle.
 
 - The opcode is broadcast to all active lanes. Inactive lanes have no
   architectural effect.
-- Every lane transfers atomically with the same latency; each array has `II=1`.
+- Every lane must transfer atomically with the same declared latency; each array
+  targets `II=1`. RTL and timing evidence are not yet available.
 - Tags and results remain stable under backpressure and are never reconstructed
   from numeric data.
 - Operation abort relies on tagged response suppression and does not flush work

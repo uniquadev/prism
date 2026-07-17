@@ -25,6 +25,14 @@ Read [Protocol](../1.protocol.md) for normative packet semantics,
 
 ## Ordered module hierarchy
 
+!!! note "Architecture contracts, not implemented ports"
+
+    The pages below define selected module responsibilities and intended stable
+    boundaries. No matching PRISM module exists in `repo/rtl/src` yet. Protocol
+    wire widths are normative; internal packed widths are provisional and must
+    be derived from the eventual `prism_pkg.sv` types rather than copied as an
+    independent ABI. See the canonical [status table](../index.md#design-and-implementation-status).
+
 The order below moves from integration boundaries to state-owning units and
 then to their reusable components. It also mirrors the intended RTL source-tree
 organization.
@@ -40,7 +48,7 @@ organization.
 1. [`prism_switch_top`](top/prism_switch_top.md) — OpenNIC shell integration,
    clock/reset boundaries, and two physical ports.
 2. [`prism_switch_core`](top/prism_switch_core.md) — shell-independent PRISM
-   core used by synthesis and end-to-end Cocotb tests.
+   core intended for synthesis and end-to-end Cocotb tests.
 
 ### Main units
 

@@ -60,9 +60,10 @@ packet-order context FIFO so body beats never need to be classified again.
   beat, exactly one of forwarding enqueue, local-store write, or drain/drop is
   selected; unselected outputs keep `valid=0`. Backpressure from the selected
   branch stops the core-side staging dequeue without changing that selection.
-- Each ingress data path has `II=1` at beat granularity and can drain one beat
-  per cycle. The two instances are independent, so both physical ports can be
-  active concurrently.
+- Each ingress data path targets `II=1` at beat granularity and one drained beat
+  per cycle. This is an architecture requirement pending RTL verification. The
+  two instances remain independent so both physical ports can be active
+  concurrently.
 
 ## Related modules and concepts
 

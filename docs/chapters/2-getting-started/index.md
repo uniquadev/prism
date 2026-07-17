@@ -1,2 +1,3 @@
 # 2. Getting Started
-TODO
+
+wip.

@@ -19,12 +19,13 @@ it does not expose OpenNIC clock-domain details.
 - **Egress packet streams — output, 2 × `prism_axis`:** two independently
   scheduled packet streams. There is no packet interleaving on either stream.
 
-- **Configuration request — input, 104-bit payload + valid/ready:** accepts the
-  normalized 8-bit command, 24-bit byte address, 8-bit byte enable, and 64-bit
-  write-data bundle from the shell wrapper.
+- **Configuration request — input, 72-bit `prism_cfg_req_t` + valid/ready:**
+  accepts one normalized 32-bit access: command, 24-bit byte address, four byte
+  enables, access flags, and 32-bit write data.
 
-- **Configuration response — output, 72-bit payload + valid/ready:** returns an
-  8-bit status and 64-bit read data exactly once for each accepted request.
+- **Configuration response — output, 40-bit `prism_cfg_rsp_t` + valid/ready:**
+  returns an 8-bit status and 32-bit read data exactly once for each accepted
+  request.
 
 - **Core status — output, 128 bits:** exposes per-unit fatal flags, current
   reset epoch, queue-pressure summary, and active-operation summary. Detailed

@@ -39,10 +39,12 @@ decision; packet data remains in the ingress path until admission succeeds.
   forwarded unchanged and never reach a local protocol engine.
 - Unsupported or malformed local opcodes select `DROP`; they cannot fall back
   to transparent forwarding after local ownership has been established.
-- Both classifier lanes are spatially independent and have `II=1`; simultaneous
+- The selected architecture requires spatially independent classifier lanes
+  targeting `II=1`; simultaneous
   first-beat events from the two ingress ports never arbitrate for one shared
-  classifier. Atomic configuration replacement occurs only between accepted
-  header events and cannot mix old and new policy fields.
+  classifier. This is an unverified throughput requirement. Atomic configuration
+  replacement occurs only between accepted header events and cannot mix old and
+  new policy fields.
 
 ## Related modules and concepts
 

@@ -9,7 +9,7 @@ execute and what it can currently admit.
 
 ## Contracts
 
-- **Configuration request/response — input/output, 104/72-bit payload +
+- **Configuration request/response — input/output, 72/40-bit payload +
   valid/ready:** exposes capabilities, resources, status, counters, staging,
   commit, abort, and release through the shell register adapter.
 
@@ -21,9 +21,10 @@ execute and what it can currently admit.
   valid/ready:** commits one complete 544-bit context with internally derived
   input, partial, and output geometries.
 
-- **Contributor, result-route, retry updates — output, 128 bits each +
-  valid/ready:** atomically installs peer bindings, RES route ranges, and direct
-  reliability policy with the operation.
+- **Contributor, result-range-route, retry updates — output, derived records +
+  valid/ready:** atomically installs peer bindings, RES Chunk Index ranges, and
+  direct reliability policy with the operation. Replication groups and their
+  concrete result destinations remain group state.
 
 - **Capability source — input, 256 bits plus repeated 64-bit tuple/profile
   entries:** receives elaborated limits, enabled collective/operator masks,
@@ -47,8 +48,9 @@ execute and what it can currently admit.
   it cannot advertise unimplemented tuples or profiles.
 - `RESOURCE_RESPONSE` is observational and reserves nothing. `OP_PREPARE`
   validates a tuple, derives all three geometries, and reserves atomically.
-- The default implementation supports eight simultaneously active operations
-  sharing sixteen live ranges and the arithmetic backends.
+- The provisional default capacity targets eight operation contexts sharing
+  sixteen live accumulator ranges and the arithmetic backends. These values are
+  not implemented or synthesis-validated capacities.
 - CONTROL fragments are all validated before commit. Partial, conflicting,
   timed-out, or over-capacity transactions expose no active state.
 

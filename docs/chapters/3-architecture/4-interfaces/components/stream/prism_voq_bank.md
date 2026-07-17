@@ -33,13 +33,14 @@ forwarded and internally generated traffic the same reservation semantics.
 
 - V1 elaborates `NUM_SOURCES=5` and `NUM_EGRESS=2`; both dimensions are
   parameters and determine array sizes and the grant matrix.
-- Every source row owns an independent write path and write pointer. Therefore
-  all five rows may enqueue concurrently, even when several rows select the
-  same egress column, because they target different `VOQ[source][egress]`
-  cells. The required write bandwidth is `NUM_SOURCES × DATA_W` bits/cycle.
-- A RAM-based implementation must bank or replicate storage by source row so it
-  preserves that concurrency. Mapping the entire matrix onto a single-write-port
-  memory is non-conforming, even if an arbiter is added in front of it.
+- Each `VOQ[source][egress]` is a logical packet queue with independent
+  ordering, reservation, and backpressure state. The first implementation
+  profile realizes each queue as a physically separate packet FIFO.
+- The architecture must resolve simultaneous reservation/enqueue requests
+  before asserting readiness and must sustain the enabled profile's admitted
+  source concurrency. A later shared-cell organization may replace the FIFO
+  matrix if it preserves the same observable contracts; it would add cell
+  allocation/reclamation, descriptor queues, and shared-memory arbitration.
 - One source row selects at most one egress column for its current packet, so a
   matrix cell never has multiple enqueue writers. Enqueue and dequeue of the
   same cell in one cycle remain legal under the packet-FIFO contract.

@@ -21,8 +21,8 @@ converters.
 
 - FP16 converts exactly; BF16 extends its fraction with zeros; FP32 is
   bit-preserving except for the protocol's canonical NaN rule.
-- FP32 produces one tile, while FP16/BF16 may produce two. The pipeline has
-  fixed declared latency and `II=1`.
+- FP32 produces one tile, while FP16/BF16 may produce two. A future pipeline
+  must declare fixed latency and targets `II=1` when that converter is compiled.
 
 ## Related modules and concepts
 

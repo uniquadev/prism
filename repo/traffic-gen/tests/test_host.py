@@ -6,7 +6,8 @@ from dataclasses import replace
 from fakes import FakeSwitchClient
 from prism_protocol.client import PrismManager
 from prism_protocol.constants import (
-    AccumulatorMode,
+    AccumulationPolicy,
+    AccumulatorProfile,
     CollectiveSemantic,
     ControlCommand,
     NextHopType,
@@ -25,7 +26,7 @@ from prism_protocol.model import (
     NextHopEntry,
     OperationDescriptor,
     ReplicationGroup,
-    ResultRoute,
+    ResultRangeRoute,
     UpstreamAction,
 )
 
@@ -41,8 +42,6 @@ def group_descriptors() -> dict[str, GroupDescriptor]:
         "s0": GroupDescriptor(
             node_role=NodeRole.ROOT,
             expected_local_contributors=1,
-            max_replication_groups=1,
-            max_replication_entries=1,
             contributors=(ContributorBinding(0, 7, bytes.fromhex("020000000100")),),
             upstream=UpstreamAction(False, 0, 0, bytes(6)),
             replication_groups=(
@@ -52,8 +51,6 @@ def group_descriptors() -> dict[str, GroupDescriptor]:
         "l0": GroupDescriptor(
             node_role=NodeRole.LEAF,
             expected_local_contributors=2,
-            max_replication_groups=1,
-            max_replication_entries=1,
             contributors=(
                 ContributorBinding(0, 1, RANK_10_MAC),
                 ContributorBinding(1, 2, RANK_20_MAC),
@@ -71,18 +68,18 @@ def operation_descriptor(replication_group_id: int) -> OperationDescriptor:
         semantic=CollectiveSemantic.REDUCE,
         reduction_operator=ReductionOperator.SUM,
         input_format=WireFormat.FP32,
-        accumulator_mode=AccumulatorMode.DETERMINISTIC_FP32,
+        accumulator_profile=AccumulatorProfile.FP32,
+        accumulation_policy=AccumulationPolicy.CONTRIBUTOR_ORDERED,
         partial_format=PartialWireFormat.FP32,
         output_format=WireFormat.FP32,
         element_count=17,
-        elements_per_chunk=4,
         max_reduction_terms=2,
         requested_window_chunks=3,
         requested_replay_slots=3,
         timeout_ms=100,
         retry_limit=3,
         result_delivery_role=True,
-        result_routes=(ResultRoute(0, 4, replication_group_id),),
+        result_range_routes=(ResultRangeRoute(0, 0, replication_group_id),),
     )
 
 
@@ -200,19 +197,22 @@ class HostCoordinatorTests(unittest.TestCase):
         self.assertEqual(rank_10.reduction_operator, ReductionOperator.SUM)
         self.assertEqual(rank_10.input_format, WireFormat.FP32)
         self.assertEqual(rank_10.output_format, WireFormat.FP32)
-        self.assertEqual(rank_10.accumulator_mode, AccumulatorMode.DETERMINISTIC_FP32)
+        self.assertEqual(rank_10.accumulator_profile, AccumulatorProfile.FP32)
+        self.assertEqual(rank_10.accumulation_policy, AccumulationPolicy.CONTRIBUTOR_ORDERED)
         self.assertEqual(
             (
                 rank_10.element_count,
-                rank_10.elements_per_chunk,
-                rank_10.expected_chunks,
+                rank_10.input_elements_per_chunk,
+                rank_10.input_expected_chunks,
+                rank_10.output_elements_per_chunk,
+                rank_10.output_expected_chunks,
                 rank_10.admitted_window_chunks,
             ),
-            (17, 4, 5, 3),
+            (17, 368, 1, 368, 1, 3),
         )
         self.assertEqual(
             rank_10.admitted_window_chunks,
-            operation.am_operation.granted_resources["l0"].aggregation_slots,
+            operation.am_operation.granted_resources["l0"].accumulator_ranges,
         )
 
     def test_duplicate_arrival_is_idempotent(self) -> None:

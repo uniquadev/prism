@@ -9,7 +9,8 @@ from prism_protocol.constants import (
     DATA_HEADER_BYTES,
     PROGRESS_HEADER_BYTES,
     RESULT_HEADER_BYTES,
-    AccumulatorMode,
+    AccumulationPolicy,
+    AccumulatorProfile,
     CollectiveSemantic,
     ControlCommand,
     ControlFlag,
@@ -27,7 +28,7 @@ from prism_protocol.constants import (
     assert_unique_enum_values,
 )
 from prism_protocol.errors import ProtocolDecodeError
-from prism_protocol.model import ArithmeticTuple, OperationDescriptor, ResultRoute
+from prism_protocol.model import ArithmeticTuple, OperationDescriptor, ResultRangeRoute
 from prism_protocol.wire import (
     ControlFrame,
     ControlHeader,
@@ -119,6 +120,11 @@ class WireLayoutTests(unittest.TestCase):
         decoded_result, decoded_payload = ResultHeader.unpack(result.pack(payload))
         self.assertEqual(decoded_result, result)
         self.assertEqual(decoded_payload, payload)
+
+        fp32_little_endian = struct.pack("<f", 1.0)
+        self.assertEqual(fp32_little_endian, bytes.fromhex("0000803f"))
+        _, preserved = DataHeader.unpack(data.pack(fp32_little_endian))
+        self.assertEqual(preserved, fp32_little_endian)
 
     def test_progress_header_and_selective_ack_round_trip(self) -> None:
         header = ProgressHeader(
@@ -220,11 +226,12 @@ class WireLayoutTests(unittest.TestCase):
         )
         arithmetic = ArithmeticTuple(
             WireFormat.FP32,
-            AccumulatorMode.DETERMINISTIC_FP32,
+            AccumulatorProfile.FP32,
+            AccumulationPolicy.CONTRIBUTOR_ORDERED,
             PartialWireFormat.FP32,
             WireFormat.FP32,
         )
-        self.assertEqual(arithmetic.encode(), 0x0403040400000000)
+        self.assertEqual(arithmetic.encode(), 0x0401020404000000)
         self.assertEqual(ArithmeticTuple.decode(arithmetic.encode()), arithmetic)
         with self.assertRaisesRegex(ValueError, "reserved bits"):
             ArithmeticTuple.decode(arithmetic.encode() | 1)
@@ -234,27 +241,27 @@ class WireLayoutTests(unittest.TestCase):
             CollectiveSemantic.REDUCE,
             ReductionOperator.SUM,
             WireFormat.FP32,
-            AccumulatorMode.DETERMINISTIC_FP32,
+            AccumulatorProfile.FP32,
+            AccumulationPolicy.CONTRIBUTOR_ORDERED,
             PartialWireFormat.FP32,
             WireFormat.FP32,
             element_count=1000,
-            elements_per_chunk=368,
             max_reduction_terms=4,
             requested_window_chunks=8,
             requested_replay_slots=16,
             timeout_ms=1000,
             retry_limit=3,
             result_delivery_role=True,
-            result_routes=(ResultRoute(0, 2, 7),),
+            result_range_routes=(ResultRangeRoute(0, 2, 7),),
         )
         encoded = descriptor.pack()
-        self.assertEqual(len(encoded), 40)
-        self.assertEqual(encoded[2:7], bytes((0x04, 0x03, 0x04, 0x04, 0x01)))
-        self.assertEqual(OperationDescriptor.unpack(encoded, descriptor.result_routes), descriptor)
+        self.assertEqual(len(encoded), 32)
+        self.assertEqual(encoded[2:8], bytes((0x04, 0x01, 0x02, 0x04, 0x04, 0x01)))
+        self.assertEqual(OperationDescriptor.unpack(encoded, descriptor.result_range_routes), descriptor)
         malformed = bytearray(encoded)
-        malformed[7] = 1
+        malformed[31] = 1
         with self.assertRaises(ValueError):
-            OperationDescriptor.unpack(bytes(malformed), descriptor.result_routes)
+            OperationDescriptor.unpack(bytes(malformed), descriptor.result_range_routes)
 
     def test_truncated_and_reserved_fields_are_rejected(self) -> None:
         with self.assertRaises(ProtocolDecodeError):

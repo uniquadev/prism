@@ -16,7 +16,8 @@ from typing import Iterable, Mapping, Protocol
 
 from .client import CollectiveGroupHandle, CollectiveOperationHandle
 from .constants import (
-    AccumulatorMode,
+    AccumulationPolicy,
+    AccumulatorProfile,
     CollectiveSemantic,
     NextHopType,
     NodeRole,
@@ -97,10 +98,13 @@ class RankStartGrant:
     reduction_operator: ReductionOperator
     input_format: WireFormat
     output_format: WireFormat
-    accumulator_mode: AccumulatorMode
+    accumulator_profile: AccumulatorProfile
+    accumulation_policy: AccumulationPolicy
     element_count: int
-    elements_per_chunk: int
-    expected_chunks: int
+    input_elements_per_chunk: int
+    input_expected_chunks: int
+    output_elements_per_chunk: int
+    output_expected_chunks: int
     admitted_window_chunks: int
 
 
@@ -352,7 +356,7 @@ class PrismHostCoordinator:
             group_descriptor = group.descriptors[rank.leaf_switch_id]
             contributor = group_descriptor.contributors[rank.contributor_id]
             descriptor = operation.descriptors[rank.leaf_switch_id]
-            admitted_window = am_operation.granted_resources[rank.leaf_switch_id].aggregation_slots
+            admitted_window = am_operation.granted_resources[rank.leaf_switch_id].accumulator_ranges
             if admitted_window <= 0:
                 raise InvalidHandleError("AM granted no receive-window slots to a participating leaf")
             grants[rank_id] = RankStartGrant(
@@ -372,10 +376,13 @@ class PrismHostCoordinator:
                 reduction_operator=descriptor.reduction_operator,
                 input_format=descriptor.input_format,
                 output_format=descriptor.output_format,
-                accumulator_mode=descriptor.accumulator_mode,
+                accumulator_profile=descriptor.accumulator_profile,
+                accumulation_policy=descriptor.accumulation_policy,
                 element_count=descriptor.element_count,
-                elements_per_chunk=descriptor.elements_per_chunk,
-                expected_chunks=descriptor.expected_chunks,
+                input_elements_per_chunk=descriptor.input_elements_per_chunk,
+                input_expected_chunks=descriptor.input_expected_chunks,
+                output_elements_per_chunk=descriptor.output_elements_per_chunk,
+                output_expected_chunks=descriptor.expected_chunks,
                 admitted_window_chunks=admitted_window,
             )
         return grants
@@ -495,8 +502,8 @@ class PrismHostCoordinator:
         route_points = {0}
         for descriptor in descriptors.values():
             descriptor.validate()
-            route_points.update(route.chunk_first for route in descriptor.result_routes)
-            route_points.update(route.chunk_last for route in descriptor.result_routes)
+            route_points.update(route.chunk_first for route in descriptor.result_range_routes)
+            route_points.update(route.chunk_last for route in descriptor.result_range_routes)
 
         replication = {
             switch_id: {item.group_id: item for item in group.descriptors[switch_id].replication_groups}
@@ -509,7 +516,7 @@ class PrismHostCoordinator:
             descriptor = descriptors[switch_id]
             matches = [
                 route
-                for route in descriptor.result_routes
+                for route in descriptor.result_range_routes
                 if route.chunk_first <= chunk <= route.chunk_last
             ]
             if not descriptor.result_delivery_role or len(matches) != 1:

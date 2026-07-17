@@ -30,7 +30,7 @@ If you use PRISM in your project, please cite the repository and/or the thesis:
 
 -   :material-map-marker-path: **First pass**
 
-    Start with [1.2 Reproducibility](chapters/1-introduction/reproducibility.md), then
+    Start with [1.1 Reproducibility](chapters/1-introduction/reproducibility.md), then
     read the [2. Getting Started](chapters/2-getting-started/index.md) overview.
 
 -   :material-chip: **Hardware view**

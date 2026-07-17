@@ -19,7 +19,6 @@ from .constants import (
     DATA_HEADER_BYTES,
     PROGRESS_HEADER_BYTES,
     RESULT_HEADER_BYTES,
-    AccumulatorMode,
     ControlCommand,
     ControlFlag,
     DataFlag,

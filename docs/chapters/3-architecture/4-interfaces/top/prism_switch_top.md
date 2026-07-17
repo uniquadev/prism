@@ -35,8 +35,9 @@ of [`prism_switch_core`](prism_switch_core.md).
   clock and active-low reset form a separate domain from the datapath.
 
 - **AXI4-Lite slave — input/output, 32-bit address and 32-bit data:** shell
-  register requests are serialized into the 104-bit internal configuration
-  request and returned as the 72-bit response. The CDC bridge completes or
+  register requests are serialized into the 72-bit internal configuration
+  request and returned as the 40-bit response. `WSTRB[3:0]` maps directly to
+  four byte enables; there is no implicit 64-bit access. The CDC bridge completes or
   fails one transaction exactly once.
 
 - **Health status — output, 64 bits:** sticky reset, RX overflow, malformed
@@ -56,6 +57,10 @@ of [`prism_switch_core`](prism_switch_core.md).
   packet rather than performing an untracked partial write.
 - No packet, context, or counter crosses clock domains as an unqualified bundle;
   configuration requests use an acknowledged CDC channel.
+- A 64-bit counter or state value occupies two explicitly addressed 32-bit
+  words. The eventual register map must define a snapshot/latch operation for
+  values that require an atomic read; ordinary low/high word accesses are not
+  silently made atomic.
 
 ## Related modules and concepts
 

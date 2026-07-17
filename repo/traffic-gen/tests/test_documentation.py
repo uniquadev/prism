@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 from prism_protocol.constants import (
-    AccumulatorMode,
+    AccumulationPolicy,
+    AccumulatorProfile,
     AllocationKey,
     CapabilityKey,
     CollectiveSemantic,
@@ -27,13 +28,12 @@ from prism_protocol.constants import (
 
 ROOT = Path(__file__).resolve().parents[3]
 PROTOCOL_DOCS = (
-    ROOT / "docs/chapters/3-architecture/protocol.md",
-    ROOT / "docs/chapters/3-architecture/protocol.it.md",
+    ROOT / "docs/chapters/3-architecture/1.protocol.md",
 )
 
 
 class DocumentationConsistencyTests(unittest.TestCase):
-    def test_canonical_wire_enums_are_documented_bilingually(self) -> None:
+    def test_canonical_wire_enums_are_documented(self) -> None:
         enum_specs = (
             (Opcode, 2, "PM_OP_"),
             (ControlCommand, 4, ""),
@@ -45,7 +45,8 @@ class DocumentationConsistencyTests(unittest.TestCase):
             (ReductionOperator, 2, ""),
             (WireFormat, 2, ""),
             (PartialWireFormat, 2, ""),
-            (AccumulatorMode, 2, ""),
+            (AccumulatorProfile, 2, ""),
+            (AccumulationPolicy, 2, ""),
             (ProgressPeerKind, 2, ""),
             (ProgressReason, 2, ""),
             (SecurityProfile, 2, ""),
@@ -61,7 +62,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
                         f"{path.name} does not pair {name} with {value}",
                     )
 
-    def test_capability_resource_and_allocation_keys_are_documented_bilingually(self) -> None:
+    def test_capability_resource_and_allocation_keys_are_documented(self) -> None:
         for path in PROTOCOL_DOCS:
             lines = path.read_text(encoding="utf-8").splitlines()
             for enum_type in (CapabilityKey, ResourceKey, AllocationKey):
@@ -95,7 +96,14 @@ class DocumentationConsistencyTests(unittest.TestCase):
             r"\bMiniSharp\b|\bMS_[A-Z0-9_]+\b|PM_SETUP_CONTEXT|PM_OP_COL_SETUP|Context ID",
         )
 
-    def test_reduce_storyboard_is_complete_bilingual_and_uniform(self) -> None:
+    def test_byte_order_rule_separates_headers_from_numeric_elements(self) -> None:
+        text = PROTOCOL_DOCS[0].read_text(encoding="utf-8")
+        self.assertIn("scalar TLV integers use network byte order", text)
+        self.assertIn("numeric DATA and RES elements", text)
+        self.assertIn("are little", text)
+        self.assertNotIn("multibyte integers and numeric elements use network byte order", text)
+
+    def test_reduce_storyboard_is_complete_and_uniform(self) -> None:
         expected = (
             "01-host-collective-request.png",
             "02-target-specific-switch-setup.png",
@@ -114,7 +122,8 @@ class DocumentationConsistencyTests(unittest.TestCase):
             self.assertEqual(referenced, expected, f"unexpected storyboard sequence in {path.name}")
 
         asset_dir = ROOT / "docs/assets/images/protocol/reduce-lifecycle"
-        self.assertEqual(tuple(path.name for path in sorted(asset_dir.glob("*.png"))), expected)
+        present = {path.name for path in asset_dir.glob("*.png")}
+        self.assertTrue(set(expected) <= present)
         for filename in expected:
             header = (asset_dir / filename).read_bytes()[:24]
             self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n", filename)

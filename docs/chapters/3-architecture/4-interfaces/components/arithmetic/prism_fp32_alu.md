@@ -23,8 +23,8 @@ accept later FP32 operators without renaming the module.
   canonical NaN, and the signed-zero rules defined by Protocol 1.0.
 - An unsupported opcode returns `UNSUPPORTED_OPERATOR` with defined-zero result;
   normal datapath operation rejects it earlier through capability checking.
-- The implementation has fixed declared latency and `II=1`. Output
-  backpressure cannot overwrite an unconsumed result.
+- The planned implementation must declare fixed latency and targets `II=1`.
+  Output backpressure cannot overwrite an unconsumed result.
 - An operation abort does not flush this shared pipeline; generation checks
   discard its returning work without affecting other operations.
 

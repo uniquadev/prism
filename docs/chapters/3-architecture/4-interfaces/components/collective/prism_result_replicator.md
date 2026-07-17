@@ -10,10 +10,11 @@ the shared payload alive until every required route owns queue and replay state.
 
 - **Replication command — input, 256-bit `prism_replica_cmd_t` +
   valid/ready:** supplies operation identity, output-stream Chunk Index,
-  immutable payload handle, route base/count, and flags.
+  immutable payload handle, Replication Group ID, and flags.
 
-- **Route lookup — output/input, 32-bit index and 128-bit route + 8-bit
-  status:** reads egress, Result Path ID, source/destination MACs, and flags.
+- **Result-destination lookup — output/input, derived index and
+  `prism_result_destination_t` + status:** enumerates egress, Result Path ID,
+  next-hop type, source/destination MACs, and flags for the selected group.
 
 - **Replica reservations — output/input, up to 2 × 32-bit request/response in
   the default build:** reserves queue and replay resources separately per
@@ -33,13 +34,14 @@ the shared payload alive until every required route owns queue and replay state.
 
 ## Contract behavior
 
-- Route ranges use the output-stream Chunk Index namespace derived during
-  `OP_PREPARE`; input and partial DATA indices never enter this lookup.
+- The parent selects a result-range route using the output-stream Chunk Index;
+  this component sees only the resulting destination set. Input and partial
+  DATA indices never enter either lookup.
 - Admission is transactional for mandatory replicas. Backpressure holds the
   current route state and immutable handle stable without duplicating earlier
   commands.
-- Route count is two for default two-rank ALLREDUCE but remains a 16-bit
-  installed-operation value.
+- Destination count is two for the default two-rank ALLREDUCE and is bounded by
+  `PRISM_MAX_RESULT_DESTINATIONS_PER_GROUP`; it is not a result-range count.
 
 ## Related modules and concepts
 

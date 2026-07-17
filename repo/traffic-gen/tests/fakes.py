@@ -21,7 +21,7 @@ from prism_protocol.model import (
     ReplicationGroup,
     ResourceAllocation,
     ResourcePool,
-    ResultRoute,
+    ResultRangeRoute,
     UpstreamAction,
     group_handle_tlv,
     operation_handle_tlv,
@@ -125,7 +125,9 @@ class FakeSwitchClient:
             handle = OperationHandleWire.unpack(_one(tlvs, TlvType.OPERATION_HANDLE).value)
             key = (handle.operation_id, handle.generation)
             routes = tuple(
-                ResultRoute.unpack(item.value) for item in tlvs if item.type == TlvType.RESULT_ROUTE
+                ResultRangeRoute.unpack(item.value)
+                for item in tlvs
+                if item.type == TlvType.RESULT_ROUTE_RANGE
             )
             descriptor = OperationDescriptor.unpack(_one(tlvs, TlvType.OPERATION_DESCRIPTOR).value, routes)
             reservation = self.pool.prepare_operation(
@@ -139,7 +141,7 @@ class FakeSwitchClient:
                 ResourceAllocation(
                     operation_slots=1,
                     phase_bitmap_bytes=reservation.bitmap_bytes,
-                    aggregation_slots=reservation.aggregation_slots,
+                    accumulator_ranges=reservation.accumulator_ranges,
                     replay_output_slots=reservation.replay_slots,
                     route_entries=reservation.route_entries,
                 ).to_tlv(TlvType.GRANTED_RESOURCES),
@@ -176,7 +178,7 @@ class FakeSwitchClient:
             allocation = ResourceAllocation() if released is None else ResourceAllocation(
                 operation_slots=1,
                 phase_bitmap_bytes=released.bitmap_bytes,
-                aggregation_slots=released.aggregation_slots,
+                accumulator_ranges=released.accumulator_ranges,
                 replay_output_slots=released.replay_slots,
                 route_entries=released.route_entries,
             )
