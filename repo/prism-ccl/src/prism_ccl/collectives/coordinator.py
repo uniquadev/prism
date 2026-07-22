@@ -1,7 +1,7 @@
 """Host/runtime coordination layered above the PRISM Aggregation Manager.
 
 This module intentionally defines no wire messages.  A deployment may keep the
-host coordinator and :class:`~prism_protocol.client.PrismManager` in one process
+host coordinator and :class:`~prism_ccl.collectives.control.PrismManager` in one process
 or connect them through an RPC transport.  In either case, rank start grants are
 host-control-plane objects and are published only after the AM has committed the
 operation on the complete switch tree.
@@ -9,13 +9,13 @@ operation on the complete switch tree.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from threading import RLock
-from typing import Iterable, Mapping, Protocol
+from typing import Protocol
 
-from .client import CollectiveGroupHandle, CollectiveOperationHandle
-from .constants import (
+from ..protocol.constants import (
     AccumulatorProfile,
     CollectiveSemantic,
     NextHopType,
@@ -24,8 +24,9 @@ from .constants import (
     ReductionOperator,
     WireFormat,
 )
-from .errors import InvalidHandleError
-from .model import OperationDescriptor
+from ..protocol.errors import InvalidHandleError
+from ..protocol.models import OperationDescriptor
+from .control import CollectiveGroupHandle, CollectiveOperationHandle
 
 
 class AggregationManager(Protocol):
@@ -176,7 +177,8 @@ class PrismHostCoordinator:
                 item.group is group
                 and item.operation_id == operation_id
                 and (
-                    item.state in (
+                    item.state
+                    in (
                         HostOperationState.WAITING_FOR_RANKS,
                         HostOperationState.CONFIGURING_SWITCHES,
                     )
@@ -184,7 +186,9 @@ class PrismHostCoordinator:
                 )
                 for item in self.operations
             ):
-                raise InvalidHandleError("host operation already exists for this group and Operation ID")
+                raise InvalidHandleError(
+                    "host operation already exists for this group and Operation ID"
+                )
 
             bindings = self._validate_rank_bindings(group, rank_bindings)
             edges = dict(parent_edges or {})
@@ -220,7 +224,10 @@ class PrismHostCoordinator:
                 raise ValueError(f"rank {rank_id} is not a participant in this operation")
             if operation.state is HostOperationState.FAILED:
                 self._raise_failure(operation)
-            if operation.state is HostOperationState.ACTIVE or rank_id in operation.arrived_rank_ids:
+            if (
+                operation.state is HostOperationState.ACTIVE
+                or rank_id in operation.arrived_rank_ids
+            ):
                 return False
 
             operation.arrived_rank_ids.add(rank_id)
@@ -239,7 +246,9 @@ class PrismHostCoordinator:
                 self._raise_failure(operation)
             if not self._grants_are_live(operation):
                 return ()
-            return tuple(operation._start_grants[rank_id] for rank_id in sorted(operation._start_grants))
+            return tuple(
+                operation._start_grants[rank_id] for rank_id in sorted(operation._start_grants)
+            )
 
     def start_grant_for_rank(
         self,
@@ -302,7 +311,9 @@ class PrismHostCoordinator:
                     return
                 raise InvalidHandleError("host operation has no releasable AM handle")
             if operation.state not in (HostOperationState.COMPLETE, HostOperationState.FAILED):
-                raise InvalidHandleError("host operation may be released only after COMPLETE or FAILED")
+                raise InvalidHandleError(
+                    "host operation may be released only after COMPLETE or FAILED"
+                )
             self.manager.release_operation(am_operation)
             operation._start_grants.clear()
             operation.cleanup_failure = None
@@ -356,7 +367,9 @@ class PrismHostCoordinator:
             descriptor = operation.descriptors[rank.leaf_switch_id]
             admitted_window = am_operation.granted_resources[rank.leaf_switch_id].accumulator_ranges
             if admitted_window <= 0:
-                raise InvalidHandleError("AM granted no receive-window slots to a participating leaf")
+                raise InvalidHandleError(
+                    "AM granted no receive-window slots to a participating leaf"
+                )
             grants[rank_id] = RankStartGrant(
                 rank_id=rank_id,
                 job_id=group.session.job_id,
@@ -409,7 +422,9 @@ class PrismHostCoordinator:
             if descriptor.node_role not in (NodeRole.LEAF, NodeRole.SINGLE):
                 raise ValueError("application ranks may bind only to LEAF or SINGLE nodes")
             if not 0 <= binding.contributor_id < descriptor.expected_local_contributors:
-                raise ValueError("rank binding Contributor ID is outside the leaf's dense local range")
+                raise ValueError(
+                    "rank binding Contributor ID is outside the leaf's dense local range"
+                )
             contributor_key = (binding.leaf_switch_id, binding.contributor_id)
             if contributor_key in assigned_contributors:
                 raise ValueError("a leaf Contributor ID may be assigned to only one rank")
@@ -423,7 +438,9 @@ class PrismHostCoordinator:
             for contributor_id in range(descriptor.expected_local_contributors)
         }
         if assigned_contributors != expected_contributors:
-            raise ValueError("rank bindings must cover every configured leaf contributor exactly once")
+            raise ValueError(
+                "rank bindings must cover every configured leaf contributor exactly once"
+            )
         return by_rank
 
     @staticmethod
@@ -468,11 +485,15 @@ class PrismHostCoordinator:
                 raise ValueError("result validation requires exactly one ROOT switch")
             root = roots[0]
             if set(parent_edges) != switch_ids - {root}:
-                raise ValueError("result validation requires one parent edge for every non-root switch")
+                raise ValueError(
+                    "result validation requires one parent edge for every non-root switch"
+                )
 
         rank_by_destination: dict[tuple[str, bytes], int] = {}
         all_rank_destination_macs: set[bytes] = set()
-        switch_mac_candidates: dict[str, set[bytes]] = {switch_id: set() for switch_id in switch_ids}
+        switch_mac_candidates: dict[str, set[bytes]] = {
+            switch_id: set() for switch_id in switch_ids
+        }
         for rank_id, binding in bindings.items():
             key = (binding.leaf_switch_id, binding.result_destination_mac)
             if key in rank_by_destination:
@@ -503,7 +524,9 @@ class PrismHostCoordinator:
             route_points.update(route.chunk_last for route in descriptor.result_range_routes)
 
         replication = {
-            switch_id: {item.group_id: item for item in group.descriptors[switch_id].replication_groups}
+            switch_id: {
+                item.group_id: item for item in group.descriptors[switch_id].replication_groups
+            }
             for switch_id in switch_ids
         }
 
@@ -533,7 +556,9 @@ class PrismHostCoordinator:
                 elif entry.next_hop_type is NextHopType.SWITCH:
                     child = switch_by_mac.get(entry.dst_mac)
                     if child is None or parent_edges.get(child) != switch_id:
-                        raise ValueError("result route targets a switch that is not a configured child")
+                        raise ValueError(
+                            "result route targets a switch that is not a configured child"
+                        )
                     result.extend(destinations(child, chunk, visited | {switch_id}))
                 else:
                     raise ValueError("result route uses an unsupported next-hop type")

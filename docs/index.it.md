@@ -17,12 +17,11 @@ delle collettive.
 
     PRISM **non** cerca di clonare SHARP, né di riprodurre tutte le
     funzionalità di uno switch ASIC InfiniBand o Ethernet commerciale. È invece
-    uno strumento hardware compatto e ispezionabile per studiare la
-    microarchitettura delle primitive INC nei vincoli di una FPGA. La domanda
-    centrale è più circoscritta e sperimentale: **come può un datapath RTL simile
-    a quello di uno switch supportare contemporaneamente l'inoltro dei pacchetti
-    a line rate, l'accumulazione streaming delle operazioni collettive e una
-    migliore riproducibilità in virgola mobile?**
+    uno strumento hardware ispezionabile per studiare la microarchitettura delle
+    primitive INC nei vincoli di una FPGA. La domanda del primo prototipo è più
+    circoscritta: **come può un datapath RTL backpressurable configurare ed
+    eseguire l'accumulazione streaming di operazioni collettive rendendo
+    esplicita la propria politica numerica?**
 
 Il datapath espone un'interfaccia AXI-Stream a 512 bit. Per il primo prototipo,
 **OpenNIC è la piattaforma di riferimento**: fornisce la shell entro cui
@@ -32,19 +31,16 @@ host.
 Sul piano numerico, PRISM studia riduzioni in virgola mobile riproducibili.
 Poiché l'addizione floating-point non è associativa, alberi di riduzione o
 ordini di scheduling diversi possono produrre risultati differenti a livello di
-bit. Il progetto confronta quindi un percorso FP32 di riferimento con un
+bit. Il progetto confronta quindi il profilo di riferimento `FP32_ARRIVAL` con un
 accumulatore lungo in stile Kulisch[^kulisch], misurandone area, latenza,
 throughput e riproducibilità.
 
-Sul piano dell'architettura, PRISM implementa uno **scheletro di data plane
-ispirato agli switch**, non uno switch di produzione completo. Include
-meccanismi comuni negli switch ad alte prestazioni, come arbitraggio per uscita,
-buffering in stile VOQ, memorizzazione condivisa dei pacchetti, propagazione
-della backpressure e scheduling a livello di pacchetto. Funzionalità avanzate
-come elaborazione VLAN, ACL, motori di replica multicast, gerarchie QoS,
-controllo della congestione basato su crediti, ECN/PFC, telemetria, isolamento
-dei guasti e gestione dei buffer di livello produttivo sono intenzionalmente
-fuori dall'ambito iniziale.
+Sul piano dell'architettura, l'RTL corrente è un nodo collettivo `SINGLE` con due
+porte, non uno switch Layer-2 convenzionale. Implementa buffering per porta,
+arbitraggio a livello di frame, backpressure, CONTROL, riduzione, routing bounded
+dei risultati e replica. Non implementa forwarding Ethernet trasparente, VOQ,
+crossbar generale, packet memory condivisa, VLAN/ACL/QoS o un datapath ad albero
+multi-switch.
 
 Il codice sorgente più recente è disponibile nel
 [repository GitHub di PRISM](https://github.com/uniquadev/prism).

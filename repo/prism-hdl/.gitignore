@@ -1,42 +1,52 @@
-resources/
-# Build artifacts
-build/
-*.vvp
-*.vcd
-
-# Python
+# Python caches and environments
 __pycache__/
 *.py[cod]
-*$py.class
-*.egg-info/
-.eggs/
-*.egg
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.uv-cache/
 .venv/
 venv/
+*.egg-info/
 
-# Test results
-results.xml
-test/logs/
-!test/logs/.gitkeep
-
-# Simulation
+# Build, simulator, and waveform output
+build/
+sim_build/
+resources/
+*.vvp
+*.vcd
 *.fst
 *.lxt
 *.lxt2
-dump.vcd
+results.xml
+*.result.xml
+*.results.xml
+test/logs/*
+!test/logs/.gitkeep
 
-# Yosys/Visualization
+# DUT-observed captures
+verification/traces/*
+!verification/traces/.gitkeep
+
+# Synthesis and visualization output
+*.jou
+*.log
+*.str
+*.wdb
+*.dcp
+*.bit
+*.ltx
 *.dot
-*.svg
-*.json
 
-# IDE
+# Editors and operating systems
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
 Thumbs.db

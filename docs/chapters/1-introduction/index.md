@@ -4,15 +4,24 @@ PRISM (**Precision-aware Reduction In-Switch Module**) is an open-source RTL res
 
 !!! abstract "Objective"
 
-    PRISM is **not** an attempt to clone SHARP, nor does it aim to reproduce the full functionality of a commercial InfiniBand or Ethernet switch ASIC. Instead, it is a compact and inspectable hardware research vehicle for studying the microarchitecture of INC primitives under FPGA constraints. The core question is narrower and more experimental: **how can a switch-like RTL datapath support line-rate packet forwarding and streaming collective accumulation while also improving floating-point reproducibility?**
+    PRISM is **not** an attempt to clone SHARP or reproduce a commercial
+    InfiniBand/Ethernet switch ASIC. The first prototype studies a narrower
+    question: how a backpressurable FPGA datapath can configure and execute
+    streaming collective accumulation while making its numerical policy
+    explicit.
 
 The datapath exposes a 512-bit AXI-Stream interface. **OpenNIC is the reference
 platform for the first prototype**: it provides the FPGA shell in which PRISM is
 synthesized and the integration with the NIC, host drivers, and software.
 
-From a numerical perspective, PRISM focuses on reproducible floating-point reductions. Conventional FP32 reductions are sensitive to operand ordering because floating-point addition is not associative; different reduction trees or scheduling orders may produce different bit-level results. PRISM therefore compares a baseline FP32 accumulation path against a Kulisch-style[^kulisch] long-accumulator approach, with the goal of studying the area, latency, throughput, and reproducibility trade-offs of exact or near-exact accumulation in a streaming network datapath.
+From a numerical perspective, PRISM focuses on reproducible floating-point reductions. Conventional FP32 reductions are sensitive to operand ordering because floating-point addition is not associative; different reduction trees or scheduling orders may produce different bit-level results. PRISM therefore compares the baseline `FP32_ARRIVAL` profile against a Kulisch-style[^kulisch] long-accumulator approach, with the goal of studying the area, latency, throughput, and reproducibility trade-offs of exact or near-exact accumulation in a streaming network datapath.
 
-From a switching perspective, PRISM implements a **switch-inspired data-plane skeleton** rather than a complete production switch. It includes mechanisms commonly found in high-performance packet switches, such as per-output arbitration, VOQ-style buffering, shared-memory packet storage, backpressure propagation, and packet-level scheduling. However, advanced features such as VLAN processing, ACLs, multicast replication engines, QoS hierarchies, credit-based congestion control, ECN/PFC, telemetry, fault isolation, and production-grade buffer management are intentionally outside the initial scope.
+The current RTL is a two-port `SINGLE` collective node, not a conventional
+Layer-2 switch. It implements per-port ingress/egress buffering, frame-level
+arbitration, backpressure, CONTROL processing, reduction, bounded result
+routing, and result replication. It deliberately omits transparent Ethernet
+forwarding, VOQs, a general crossbar, shared packet memory, VLAN/ACL/QoS
+processing, and a multi-switch tree datapath.
 
 The latest source code is available from the [PRISM GitHub repository](https://github.com/uniquadev/prism).
 

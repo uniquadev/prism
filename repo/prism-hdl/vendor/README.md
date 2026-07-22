@@ -1,6 +1,6 @@
 # Vendor simulation utilities
 
-I moduli sotto `repo/rtl/vendor/` sono utilità di simulazione per leggere e
-scrivere file PCAP durante i test. Non sono parte della codebase principale
-del progetto e possono avere origini/licenze differenti; verificate la
-provenienza prima di redistribuire.
+The PCAP modules are legacy third-party simulation helpers. They are not listed
+in `rtl.f` and are not used by the current Cocotb capture path, which writes
+DUT-observed frames through the CCL. Preserve each file's provenance and
+license when redistributing it.

@@ -4,28 +4,26 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 import struct
-import time
 from collections import OrderedDict
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Any
 
 from .constants import (
     BYTES_PER_ELEMENT,
-    PARTIAL_BYTES_PER_ELEMENT,
     CHUNK_PAYLOAD_BYTES,
     MAX_BITMAP_BYTES,
     MAX_CHUNKS,
+    PARTIAL_BYTES_PER_ELEMENT,
     AccumulatorProfile,
-    AllocationKey,
     AccumulatorRangeState,
+    AllocationKey,
     CapabilityKey,
     CollectiveSemantic,
     FeatureFlag,
-    GroupState,
     NextHopType,
     NodeRole,
     OperationState,
@@ -33,14 +31,13 @@ from .constants import (
     ReductionOperator,
     ResourceKey,
     SecurityProfile,
-    SessionState,
     Status,
     TlvType,
     WireFormat,
 )
 from .errors import GenerationWrapRequiresNewJob, InvalidHandleError, PrismError
-from .wire import GroupHandleWire, OperationHandleWire, OperationIdentity, Tlv, expected_chunks
-
+from .geometry import expected_chunks
+from .serialization import GroupHandleWire, OperationHandleWire, OperationIdentity, Tlv
 
 _CAPABILITY_ENTRY = struct.Struct("!HHQI")
 _GROUP_DESCRIPTOR = struct.Struct("!BBHI")
@@ -64,33 +61,6 @@ def _mac(value: bytes) -> bytes:
     return value
 
 
-@dataclass(frozen=True, slots=True)
-class ArithmeticTuple:
-    input_format: WireFormat
-    accumulator_profile: AccumulatorProfile
-    partial_format: PartialWireFormat
-    output_format: WireFormat
-
-    def encode(self) -> int:
-        return (
-            int(self.input_format) << 56
-            | int(self.accumulator_profile) << 48
-            | int(self.partial_format) << 40
-            | int(self.output_format) << 32
-        )
-
-    @classmethod
-    def decode(cls, value: int) -> "ArithmeticTuple":
-        if value & 0xFFFFFFFF:
-            raise ValueError("non-zero arithmetic tuple reserved bits")
-        return cls(
-            WireFormat((value >> 56) & 0xFF),
-            AccumulatorProfile((value >> 48) & 0xFF),
-            PartialWireFormat((value >> 40) & 0xFF),
-            WireFormat((value >> 32) & 0xFF),
-        )
-
-
 def required_accumulator_state_bits(
     profile: AccumulatorProfile,
     reduction_operator: ReductionOperator,
@@ -101,7 +71,7 @@ def required_accumulator_state_bits(
         raise ValueError("maximum reduction terms must be positive")
     if reduction_operator != ReductionOperator.SUM:
         raise ValueError("unsupported accumulator operation")
-    if profile in (AccumulatorProfile.FP32, AccumulatorProfile.FP32_ORDERED):
+    if profile in (AccumulatorProfile.FP32_ARRIVAL, AccumulatorProfile.FP32_ORDERED):
         return 32
     if profile != AccumulatorProfile.KULISCH_FP32:
         raise ValueError("unsupported accumulator profile")
@@ -140,7 +110,7 @@ class AccumulatorProfileCapability:
         )
 
     @classmethod
-    def decode(cls, value: int) -> "AccumulatorProfileCapability":
+    def decode(cls, value: int) -> AccumulatorProfileCapability:
         flags = value & 0xFF
         if flags & ~0x01:
             raise ValueError("non-zero accumulator-profile reserved flags")
@@ -150,6 +120,17 @@ class AccumulatorProfileCapability:
             (value >> 8) & 0xFFFFFFFF,
             bool(flags & 0x01),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class AccumulatorSelection:
+    capability: AccumulatorProfileCapability
+    required_state_bits: int
+    sufficient: bool
+
+    @property
+    def accumulation_inexact(self) -> bool:
+        return not self.sufficient
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,10 +145,12 @@ class ContributorBinding:
             raise ValueError("contributor or ingress port exceeds 16 bits")
         if self.flags:
             raise ValueError("contributor binding reserved flags must be zero")
-        return _CONTRIBUTOR_BINDING.pack(self.contributor_id, self.ingress_port, _mac(self.source_mac), 0)
+        return _CONTRIBUTOR_BINDING.pack(
+            self.contributor_id, self.ingress_port, _mac(self.source_mac), 0
+        )
 
     @classmethod
-    def unpack(cls, value: bytes) -> "ContributorBinding":
+    def unpack(cls, value: bytes) -> ContributorBinding:
         if len(value) != _CONTRIBUTOR_BINDING.size:
             raise ValueError("invalid contributor binding length")
         contributor, port, mac, flags = _CONTRIBUTOR_BINDING.unpack(value)
@@ -194,7 +177,7 @@ class UpstreamAction:
         )
 
     @classmethod
-    def unpack(cls, value: bytes) -> "UpstreamAction":
+    def unpack(cls, value: bytes) -> UpstreamAction:
         if len(value) != _UPSTREAM_ACTION.size:
             raise ValueError("invalid upstream action length")
         has_parent, reserved8, contributor, port, mac, reserved16 = _UPSTREAM_ACTION.unpack(value)
@@ -223,7 +206,7 @@ class NextHopEntry:
         )
 
     @classmethod
-    def unpack(cls, value: bytes) -> "NextHopEntry":
+    def unpack(cls, value: bytes) -> NextHopEntry:
         if len(value) != _NEXT_HOP.size:
             raise ValueError("invalid next-hop entry length")
         path, port, type_value, flags, mac = _NEXT_HOP.unpack(value)
@@ -246,14 +229,20 @@ class ReplicationGroup:
         pairs = [(entry.egress_port, entry.dst_mac) for entry in self.entries]
         if len(pairs) != len(set(pairs)):
             raise ValueError("duplicate egress-port/destination-MAC pair")
-        return _REPLICATION_HEADER.pack(self.group_id, len(self.entries), 0) + b"".join(entry.pack() for entry in self.entries)
+        return _REPLICATION_HEADER.pack(self.group_id, len(self.entries), 0) + b"".join(
+            entry.pack() for entry in self.entries
+        )
 
     @classmethod
-    def unpack(cls, value: bytes) -> "ReplicationGroup":
+    def unpack(cls, value: bytes) -> ReplicationGroup:
         if len(value) < _REPLICATION_HEADER.size:
             raise ValueError("truncated replication group")
         group_id, count, reserved = _REPLICATION_HEADER.unpack_from(value)
-        if reserved or count == 0 or len(value) != _REPLICATION_HEADER.size + count * _NEXT_HOP.size:
+        if (
+            reserved
+            or count == 0
+            or len(value) != _REPLICATION_HEADER.size + count * _NEXT_HOP.size
+        ):
             raise ValueError("invalid replication group length or reserved field")
         entries = tuple(
             NextHopEntry.unpack(value[offset : offset + _NEXT_HOP.size])
@@ -310,7 +299,7 @@ class GroupDescriptor:
         contributors: Iterable[ContributorBinding],
         upstream: UpstreamAction,
         replication_groups: Iterable[ReplicationGroup] = (),
-    ) -> "GroupDescriptor":
+    ) -> GroupDescriptor:
         if len(value) != _GROUP_DESCRIPTOR.size:
             raise ValueError("group descriptor must be 8 bytes")
         role, flags, expected, reserved = _GROUP_DESCRIPTOR.unpack(value)
@@ -336,10 +325,12 @@ class ResultRangeRoute:
     def pack(self) -> bytes:
         if not 0 <= self.chunk_first <= self.chunk_last < MAX_CHUNKS:
             raise ValueError("invalid result-route range")
-        return _RESULT_ROUTE_RANGE.pack(_u24(self.chunk_first), _u24(self.chunk_last), self.replication_group_id)
+        return _RESULT_ROUTE_RANGE.pack(
+            _u24(self.chunk_first), _u24(self.chunk_last), self.replication_group_id
+        )
 
     @classmethod
-    def unpack(cls, value: bytes) -> "ResultRangeRoute":
+    def unpack(cls, value: bytes) -> ResultRangeRoute:
         if len(value) != _RESULT_ROUTE_RANGE.size:
             raise ValueError("result-range route must be 8 bytes")
         first, last, group = _RESULT_ROUTE_RANGE.unpack(value)
@@ -387,19 +378,16 @@ class OperationDescriptor:
     def partial_expected_chunks(self) -> int:
         return expected_chunks(self.element_count, self.partial_elements_per_chunk)
 
-    @property
-    def arithmetic_tuple(self) -> ArithmeticTuple:
-        return ArithmeticTuple(
-            self.input_format,
-            self.accumulator_profile,
-            self.partial_format,
-            self.output_format,
-        )
-
     def validate(self) -> None:
-        if self.semantic == CollectiveSemantic.INVALID or self.reduction_operator == ReductionOperator.INVALID:
+        if (
+            self.semantic == CollectiveSemantic.INVALID
+            or self.reduction_operator == ReductionOperator.INVALID
+        ):
             raise ValueError("invalid collective semantic or operator")
-        if self.input_format not in BYTES_PER_ELEMENT or self.output_format not in BYTES_PER_ELEMENT:
+        if (
+            self.input_format not in BYTES_PER_ELEMENT
+            or self.output_format not in BYTES_PER_ELEMENT
+        ):
             raise ValueError("invalid input/output format")
         if self.partial_format not in PARTIAL_BYTES_PER_ELEMENT:
             raise ValueError("invalid partial wire format")
@@ -415,7 +403,11 @@ class OperationDescriptor:
             raise ValueError("invalid replay-slot request")
         if self.timeout_ms <= 0 or self.timeout_ms >= (1 << 32):
             raise ValueError("invalid timeout")
-        for count in (self.input_expected_chunks, self.partial_expected_chunks, self.expected_chunks):
+        for count in (
+            self.input_expected_chunks,
+            self.partial_expected_chunks,
+            self.expected_chunks,
+        ):
             if count > MAX_CHUNKS:
                 raise ValueError("derived direct-stream geometry exceeds the Chunk Index space")
         previous_last = -1
@@ -455,7 +447,9 @@ class OperationDescriptor:
         )
 
     @classmethod
-    def unpack(cls, value: bytes, result_range_routes: Iterable[ResultRangeRoute] = ()) -> "OperationDescriptor":
+    def unpack(
+        cls, value: bytes, result_range_routes: Iterable[ResultRangeRoute] = ()
+    ) -> OperationDescriptor:
         if len(value) != _OPERATION_DESCRIPTOR.size:
             raise ValueError("operation descriptor must be 32 bytes")
         (
@@ -519,7 +513,7 @@ class PhaseBitmapAllocation:
         return self.aggregation_bitmap_bytes + self.result_bitmap_bytes
 
     @classmethod
-    def calculate(cls, expected: int, result_delivery_role: bool) -> "PhaseBitmapAllocation":
+    def calculate(cls, expected: int, result_delivery_role: bool) -> PhaseBitmapAllocation:
         if not 0 <= expected <= MAX_CHUNKS:
             raise ValueError("expected chunk count exceeds 24-bit namespace")
         aggregation = (expected + 7) // 8
@@ -576,7 +570,9 @@ class PhaseBitmap:
     @property
     def complete(self) -> bool:
         aggregation_complete = self.aggregation_done_count == self.allocation.expected_chunks
-        result_complete = not self.result or self.result_done_count == self.allocation.expected_chunks
+        result_complete = (
+            not self.result or self.result_done_count == self.allocation.expected_chunks
+        )
         return aggregation_complete and result_complete
 
     def _validate_chunk(self, chunk: int) -> None:
@@ -607,7 +603,9 @@ class Capabilities:
     max_selective_ack_window: int
     collective_semantics: frozenset[CollectiveSemantic]
     reduction_operators: frozenset[ReductionOperator]
-    arithmetic_tuples: frozenset[ArithmeticTuple]
+    input_formats: frozenset[WireFormat]
+    partial_formats: frozenset[PartialWireFormat]
+    output_formats: frozenset[WireFormat]
     accumulator_profiles: frozenset[AccumulatorProfileCapability]
     mtu_bytes: int = 1500
     max_prism_payload_bytes: int = CHUNK_PAYLOAD_BYTES
@@ -616,10 +614,13 @@ class Capabilities:
     replay_cache_retention_ms: int = 10_000
 
     @classmethod
-    def reference(cls, **overrides) -> "Capabilities":
-        values = dict(
+    def reference(cls, **overrides: Any) -> Capabilities:
+        values: dict[str, Any] = dict(
             device_boot_id=1,
-            feature_flags=FeatureFlag.RELIABLE_HOP_BY_HOP | FeatureFlag.SELECTIVE_ACK | FeatureFlag.RESULT_ACK | FeatureFlag.LEASED_SESSIONS,
+            feature_flags=FeatureFlag.RELIABLE_HOP_BY_HOP
+            | FeatureFlag.SELECTIVE_ACK
+            | FeatureFlag.RESULT_ACK
+            | FeatureFlag.LEASED_SESSIONS,
             max_sessions=8,
             max_installed_groups=64,
             max_operation_contexts=32,
@@ -637,15 +638,54 @@ class Capabilities:
             max_operation_result_route_ranges=128,
             max_management_staging_bytes=64 * 1024,
             max_selective_ack_window=1024,
-            collective_semantics=frozenset({CollectiveSemantic.REDUCE, CollectiveSemantic.ALLREDUCE}),
+            collective_semantics=frozenset(
+                {CollectiveSemantic.REDUCE, CollectiveSemantic.ALLREDUCE}
+            ),
             reduction_operators=frozenset({ReductionOperator.SUM}),
-            arithmetic_tuples=frozenset({ArithmeticTuple(WireFormat.FP32, AccumulatorProfile.FP32_ORDERED, PartialWireFormat.FP32, WireFormat.FP32)}),
-            accumulator_profiles=frozenset({AccumulatorProfileCapability(AccumulatorProfile.FP32_ORDERED, 32, (1 << 32) - 1, True)}),
+            input_formats=frozenset({WireFormat.FP32}),
+            partial_formats=frozenset({PartialWireFormat.FP32}),
+            output_formats=frozenset({WireFormat.FP32}),
+            accumulator_profiles=frozenset(
+                {
+                    AccumulatorProfileCapability(
+                        AccumulatorProfile.FP32_ORDERED, 32, (1 << 32) - 1, True
+                    )
+                }
+            ),
         )
         values.update(overrides)
         return cls(**values)
 
-    def validate_operation(self, descriptor: OperationDescriptor) -> None:
+    def select_accumulator(self, descriptor: OperationDescriptor) -> AccumulatorSelection:
+        required_state_bits = required_accumulator_state_bits(
+            descriptor.accumulator_profile,
+            descriptor.reduction_operator,
+            descriptor.input_format,
+            descriptor.max_reduction_terms,
+        )
+        candidates = tuple(
+            item
+            for item in self.accumulator_profiles
+            if item.profile == descriptor.accumulator_profile
+        )
+        if not candidates:
+            raise PrismError(
+                Status.UNSUPPORTED_ARITHMETIC_CONFIGURATION,
+                "accumulator profile is not compiled",
+            )
+        sufficient = tuple(
+            item
+            for item in candidates
+            if descriptor.max_reduction_terms <= item.max_reduction_terms
+            and required_state_bits <= item.state_bits_per_element
+        )
+        if sufficient:
+            selected = min(sufficient, key=lambda item: item.state_bits_per_element)
+            return AccumulatorSelection(selected, required_state_bits, True)
+        selected = max(candidates, key=lambda item: item.state_bits_per_element)
+        return AccumulatorSelection(selected, required_state_bits, False)
+
+    def validate_operation(self, descriptor: OperationDescriptor) -> AccumulatorSelection:
         descriptor.validate()
         if descriptor.semantic not in self.collective_semantics:
             raise PrismError(Status.UNSUPPORTED_FEATURE, "collective semantic is not advertised")
@@ -653,30 +693,41 @@ class Capabilities:
             raise PrismError(Status.UNSUPPORTED_FEATURE, "reduction operator is not advertised")
         expected = descriptor.expected_chunks
         allocation = PhaseBitmapAllocation.calculate(expected, descriptor.result_delivery_role)
-        if max(descriptor.input_expected_chunks, descriptor.partial_expected_chunks, descriptor.expected_chunks) > self.max_chunks_per_direct_stream:
+        if (
+            max(
+                descriptor.input_expected_chunks,
+                descriptor.partial_expected_chunks,
+                descriptor.expected_chunks,
+            )
+            > self.max_chunks_per_direct_stream
+        ):
             raise PrismError(Status.NO_BITMAP_MEMORY, "operation exceeds maximum chunk count")
         if allocation.total_bytes > self.max_bitmap_bytes_per_operation:
-            raise PrismError(Status.NO_BITMAP_MEMORY, "operation phase bitmap exceeds per-operation capability")
+            raise PrismError(
+                Status.NO_BITMAP_MEMORY, "operation phase bitmap exceeds per-operation capability"
+            )
         if descriptor.requested_window_chunks > self.max_active_accumulator_ranges_per_operation:
             # A smaller grant is allowed, so this is not itself an admission failure.
             pass
         if len(descriptor.result_range_routes) > self.max_operation_result_route_ranges:
             raise PrismError(Status.NO_ROUTE_RESOURCE, "too many result routes")
-        if descriptor.arithmetic_tuple not in self.arithmetic_tuples:
-            raise PrismError(Status.UNSUPPORTED_ARITHMETIC_TUPLE, "arithmetic tuple is not advertised")
-        required_state_bits = required_accumulator_state_bits(
-            descriptor.accumulator_profile,
-            descriptor.reduction_operator,
-            descriptor.input_format,
-            descriptor.max_reduction_terms,
-        )
-        if not any(
-            item.profile == descriptor.accumulator_profile
-            and descriptor.max_reduction_terms <= item.max_reduction_terms
-            and required_state_bits <= item.state_bits_per_element
-            for item in self.accumulator_profiles
-        ):
-            raise PrismError(Status.UNSUPPORTED_ARITHMETIC_TUPLE, "accumulator profile cannot cover the requested reduction terms")
+        unsupported = []
+        if descriptor.input_format not in self.input_formats:
+            unsupported.append("input format")
+        if descriptor.partial_format not in self.partial_formats:
+            unsupported.append("partial format")
+        if descriptor.output_format not in self.output_formats:
+            unsupported.append("output format")
+        if descriptor.accumulator_profile not in {
+            item.profile for item in self.accumulator_profiles
+        }:
+            unsupported.append("accumulator profile")
+        if unsupported:
+            raise PrismError(
+                Status.UNSUPPORTED_ARITHMETIC_CONFIGURATION,
+                f"unsupported arithmetic configuration: {', '.join(unsupported)}",
+            )
+        return self.select_accumulator(descriptor)
 
     def validate_group(self, descriptor: GroupDescriptor) -> None:
         descriptor.validate()
@@ -684,13 +735,22 @@ class Capabilities:
             raise PrismError(Status.INVALID_RECORD, "local contributor capacity exceeded")
         if len(descriptor.replication_groups) > self.max_replication_groups:
             raise PrismError(Status.NO_REPLICATION_RESOURCE, "replication-group capacity exceeded")
-        if any(len(group.entries) > self.max_result_destinations_per_group for group in descriptor.replication_groups):
+        if any(
+            len(group.entries) > self.max_result_destinations_per_group
+            for group in descriptor.replication_groups
+        ):
             raise PrismError(Status.NO_REPLICATION_RESOURCE, "replication-entry capacity exceeded")
 
     def capability_entries(self) -> tuple[tuple[CapabilityKey, int], ...]:
         semantics_mask = sum(1 << int(value) for value in self.collective_semantics)
         operators_mask = sum(1 << int(value) for value in self.reduction_operators)
         security_mask = sum(1 << int(value) for value in self.security_profiles)
+        input_formats_mask = sum(1 << int(value) for value in self.input_formats)
+        accumulator_profiles_mask = sum(
+            1 << int(value) for value in {item.profile for item in self.accumulator_profiles}
+        )
+        partial_formats_mask = sum(1 << int(value) for value in self.partial_formats)
+        output_formats_mask = sum(1 << int(value) for value in self.output_formats)
         base = [
             (CapabilityKey.MAX_SESSIONS, self.max_sessions),
             (CapabilityKey.MAX_INSTALLED_GROUPS, self.max_installed_groups),
@@ -700,17 +760,33 @@ class Capabilities:
             (CapabilityKey.MAX_CHUNKS_PER_DIRECT_STREAM, self.max_chunks_per_direct_stream),
             (CapabilityKey.MAX_BITMAP_BYTES_PER_OPERATION, self.max_bitmap_bytes_per_operation),
             (CapabilityKey.TOTAL_PHASE_BITMAP_POOL_BYTES, self.total_phase_bitmap_pool_bytes),
-            (CapabilityKey.MAX_ACTIVE_ACCUMULATOR_RANGES_GLOBAL, self.max_active_accumulator_ranges_global),
-            (CapabilityKey.MAX_ACTIVE_ACCUMULATOR_RANGES_PER_OPERATION, self.max_active_accumulator_ranges_per_operation),
+            (
+                CapabilityKey.MAX_ACTIVE_ACCUMULATOR_RANGES_GLOBAL,
+                self.max_active_accumulator_ranges_global,
+            ),
+            (
+                CapabilityKey.MAX_ACTIVE_ACCUMULATOR_RANGES_PER_OPERATION,
+                self.max_active_accumulator_ranges_per_operation,
+            ),
             (CapabilityKey.TOTAL_REPLAY_OUTPUT_SLOTS, self.total_replay_output_slots),
             (CapabilityKey.MAX_LOCAL_CONTRIBUTORS, self.max_local_contributors),
             (CapabilityKey.MAX_REPLICATION_GROUPS, self.max_replication_groups),
-            (CapabilityKey.MAX_RESULT_DESTINATIONS_PER_GROUP, self.max_result_destinations_per_group),
-            (CapabilityKey.MAX_OPERATION_RESULT_ROUTE_RANGES, self.max_operation_result_route_ranges),
+            (
+                CapabilityKey.MAX_RESULT_DESTINATIONS_PER_GROUP,
+                self.max_result_destinations_per_group,
+            ),
+            (
+                CapabilityKey.MAX_OPERATION_RESULT_ROUTE_RANGES,
+                self.max_operation_result_route_ranges,
+            ),
             (CapabilityKey.MAX_MANAGEMENT_STAGING_BYTES, self.max_management_staging_bytes),
             (CapabilityKey.MAX_SELECTIVE_ACK_WINDOW, self.max_selective_ack_window),
             (CapabilityKey.SUPPORTED_COLLECTIVE_SEMANTICS, semantics_mask),
             (CapabilityKey.SUPPORTED_REDUCTION_OPERATORS, operators_mask),
+            (CapabilityKey.SUPPORTED_INPUT_FORMATS, input_formats_mask),
+            (CapabilityKey.SUPPORTED_ACCUMULATOR_PROFILES, accumulator_profiles_mask),
+            (CapabilityKey.SUPPORTED_PARTIAL_FORMATS, partial_formats_mask),
+            (CapabilityKey.SUPPORTED_OUTPUT_FORMATS, output_formats_mask),
             (CapabilityKey.MTU_BYTES, self.mtu_bytes),
             (CapabilityKey.MAX_PRISM_PAYLOAD_BYTES, self.max_prism_payload_bytes),
             (CapabilityKey.SUPPORTED_SECURITY_PROFILES, security_mask),
@@ -718,29 +794,35 @@ class Capabilities:
             (CapabilityKey.REPLAY_CACHE_DEPTH, self.replay_cache_depth),
             (CapabilityKey.REPLAY_CACHE_RETENTION_MS, self.replay_cache_retention_ms),
         ]
-        base.extend((CapabilityKey.SUPPORTED_ARITHMETIC_TUPLE, value.encode()) for value in sorted(self.arithmetic_tuples, key=lambda item: item.encode()))
-        base.extend((CapabilityKey.SUPPORTED_ACCUMULATOR_PROFILE, value.encode()) for value in sorted(self.accumulator_profiles, key=lambda item: item.encode()))
+        base.extend(
+            (CapabilityKey.ACCUMULATOR_PROFILE_CAPABILITY, value.encode())
+            for value in sorted(self.accumulator_profiles, key=lambda item: item.encode())
+        )
         return tuple(base)
 
-    def to_tlv(self) -> Tlv:
-        value = b"".join(_CAPABILITY_ENTRY.pack(int(key), 0, item, 0) for key, item in self.capability_entries())
-        return Tlv(TlvType.CAPABILITIES, value)
+    def to_tlvs(self) -> tuple[Tlv]:
+        value = b"".join(
+            _CAPABILITY_ENTRY.pack(int(key), 0, item, 0) for key, item in self.capability_entries()
+        )
+        return (Tlv(TlvType.CAPABILITIES, value),)
 
     @classmethod
-    def from_tlv(cls, device_boot_id: int, tlv: Tlv) -> "Capabilities":
-        if tlv.type != TlvType.CAPABILITIES or len(tlv.value) % _CAPABILITY_ENTRY.size:
+    def from_tlvs(cls, device_boot_id: int, capabilities_tlv: Tlv) -> Capabilities:
+        if (
+            capabilities_tlv.type != TlvType.CAPABILITIES
+            or len(capabilities_tlv.value) % _CAPABILITY_ENTRY.size
+        ):
             raise ValueError("invalid capabilities TLV")
         values: dict[CapabilityKey, int] = {}
-        tuples: set[ArithmeticTuple] = set()
         profiles: set[AccumulatorProfileCapability] = set()
-        for offset in range(0, len(tlv.value), _CAPABILITY_ENTRY.size):
-            key_value, flags, value, reserved = _CAPABILITY_ENTRY.unpack_from(tlv.value, offset)
+        for offset in range(0, len(capabilities_tlv.value), _CAPABILITY_ENTRY.size):
+            key_value, flags, value, reserved = _CAPABILITY_ENTRY.unpack_from(
+                capabilities_tlv.value, offset
+            )
             if flags or reserved:
                 raise ValueError("non-zero capability entry reserved field")
             key = CapabilityKey(key_value)
-            if key == CapabilityKey.SUPPORTED_ARITHMETIC_TUPLE:
-                tuples.add(ArithmeticTuple.decode(value))
-            elif key == CapabilityKey.SUPPORTED_ACCUMULATOR_PROFILE:
+            if key == CapabilityKey.ACCUMULATOR_PROFILE_CAPABILITY:
                 profiles.add(AccumulatorProfileCapability.decode(value))
             elif key in values:
                 raise ValueError(f"duplicate capability key {key.name}")
@@ -748,21 +830,52 @@ class Capabilities:
                 values[key] = value
         required = set(CapabilityKey) - {
             CapabilityKey.INVALID,
-            CapabilityKey.SUPPORTED_ARITHMETIC_TUPLE,
-            CapabilityKey.SUPPORTED_ACCUMULATOR_PROFILE,
+            CapabilityKey.ACCUMULATOR_PROFILE_CAPABILITY,
         }
         missing = required - values.keys()
         if missing:
-            raise ValueError(f"missing capability entries: {', '.join(key.name for key in sorted(missing, key=int))}")
-        semantics = frozenset(
-            value for value in CollectiveSemantic if value != CollectiveSemantic.INVALID and values[CapabilityKey.SUPPORTED_COLLECTIVE_SEMANTICS] & (1 << int(value))
+            raise ValueError(
+                "missing capability entries: "
+                f"{', '.join(key.name for key in sorted(missing, key=int))}"
+            )
+
+        def decode_mask(enum_type: Any, mask: int, *, include_zero: bool = False) -> frozenset[Any]:
+            members = frozenset(
+                member
+                for member in enum_type
+                if (include_zero or int(member) != 0) and mask & (1 << int(member))
+            )
+            known_mask = sum(
+                1 << int(member) for member in enum_type if include_zero or int(member) != 0
+            )
+            if mask & ~known_mask:
+                raise ValueError(f"{enum_type.__name__} mask contains reserved bits")
+            return members
+
+        semantics = decode_mask(
+            CollectiveSemantic, values[CapabilityKey.SUPPORTED_COLLECTIVE_SEMANTICS]
         )
-        operators = frozenset(
-            value for value in ReductionOperator if value != ReductionOperator.INVALID and values[CapabilityKey.SUPPORTED_REDUCTION_OPERATORS] & (1 << int(value))
+        operators = decode_mask(
+            ReductionOperator, values[CapabilityKey.SUPPORTED_REDUCTION_OPERATORS]
         )
-        security = frozenset(
-            value for value in SecurityProfile if values[CapabilityKey.SUPPORTED_SECURITY_PROFILES] & (1 << int(value))
+        security = decode_mask(
+            SecurityProfile,
+            values[CapabilityKey.SUPPORTED_SECURITY_PROFILES],
+            include_zero=True,
         )
+        input_formats = decode_mask(WireFormat, values[CapabilityKey.SUPPORTED_INPUT_FORMATS])
+        advertised_profiles = decode_mask(
+            AccumulatorProfile, values[CapabilityKey.SUPPORTED_ACCUMULATOR_PROFILES]
+        )
+        partial_formats = decode_mask(
+            PartialWireFormat, values[CapabilityKey.SUPPORTED_PARTIAL_FORMATS]
+        )
+        output_formats = decode_mask(WireFormat, values[CapabilityKey.SUPPORTED_OUTPUT_FORMATS])
+        described_profiles = frozenset(item.profile for item in profiles)
+        if advertised_profiles != described_profiles:
+            raise ValueError(
+                "SUPPORTED_ACCUMULATOR_PROFILES does not match profile capability records"
+            )
         known_feature_mask = sum(int(value) for value in FeatureFlag)
         feature_mask = values[CapabilityKey.SUPPORTED_RELIABILITY_FEATURES]
         if feature_mask & ~known_feature_mask:
@@ -778,18 +891,28 @@ class Capabilities:
             max_chunks_per_direct_stream=values[CapabilityKey.MAX_CHUNKS_PER_DIRECT_STREAM],
             max_bitmap_bytes_per_operation=values[CapabilityKey.MAX_BITMAP_BYTES_PER_OPERATION],
             total_phase_bitmap_pool_bytes=values[CapabilityKey.TOTAL_PHASE_BITMAP_POOL_BYTES],
-            max_active_accumulator_ranges_global=values[CapabilityKey.MAX_ACTIVE_ACCUMULATOR_RANGES_GLOBAL],
-            max_active_accumulator_ranges_per_operation=values[CapabilityKey.MAX_ACTIVE_ACCUMULATOR_RANGES_PER_OPERATION],
+            max_active_accumulator_ranges_global=values[
+                CapabilityKey.MAX_ACTIVE_ACCUMULATOR_RANGES_GLOBAL
+            ],
+            max_active_accumulator_ranges_per_operation=values[
+                CapabilityKey.MAX_ACTIVE_ACCUMULATOR_RANGES_PER_OPERATION
+            ],
             total_replay_output_slots=values[CapabilityKey.TOTAL_REPLAY_OUTPUT_SLOTS],
             max_local_contributors=values[CapabilityKey.MAX_LOCAL_CONTRIBUTORS],
             max_replication_groups=values[CapabilityKey.MAX_REPLICATION_GROUPS],
-            max_result_destinations_per_group=values[CapabilityKey.MAX_RESULT_DESTINATIONS_PER_GROUP],
-            max_operation_result_route_ranges=values[CapabilityKey.MAX_OPERATION_RESULT_ROUTE_RANGES],
+            max_result_destinations_per_group=values[
+                CapabilityKey.MAX_RESULT_DESTINATIONS_PER_GROUP
+            ],
+            max_operation_result_route_ranges=values[
+                CapabilityKey.MAX_OPERATION_RESULT_ROUTE_RANGES
+            ],
             max_management_staging_bytes=values[CapabilityKey.MAX_MANAGEMENT_STAGING_BYTES],
             max_selective_ack_window=values[CapabilityKey.MAX_SELECTIVE_ACK_WINDOW],
             collective_semantics=semantics,
             reduction_operators=operators,
-            arithmetic_tuples=frozenset(tuples),
+            input_formats=input_formats,
+            partial_formats=partial_formats,
+            output_formats=output_formats,
             accumulator_profiles=frozenset(profiles),
             mtu_bytes=values[CapabilityKey.MTU_BYTES],
             max_prism_payload_bytes=values[CapabilityKey.MAX_PRISM_PAYLOAD_BYTES],
@@ -825,18 +948,27 @@ class ResourceSnapshot:
         )
 
     def to_tlvs(self) -> tuple[Tlv, Tlv]:
-        value = b"".join(_CAPABILITY_ENTRY.pack(int(key), 0, item, 0) for key, item in self.entries())
-        return Tlv.u64(TlvType.RESOURCE_SNAPSHOT_ID, self.snapshot_id), Tlv(TlvType.RESOURCE_SNAPSHOT, value)
+        value = b"".join(
+            _CAPABILITY_ENTRY.pack(int(key), 0, item, 0) for key, item in self.entries()
+        )
+        return Tlv.u64(TlvType.RESOURCE_SNAPSHOT_ID, self.snapshot_id), Tlv(
+            TlvType.RESOURCE_SNAPSHOT, value
+        )
 
     @classmethod
-    def from_tlvs(cls, snapshot_id_tlv: Tlv, snapshot_tlv: Tlv) -> "ResourceSnapshot":
-        if snapshot_id_tlv.type != TlvType.RESOURCE_SNAPSHOT_ID or snapshot_tlv.type != TlvType.RESOURCE_SNAPSHOT:
+    def from_tlvs(cls, snapshot_id_tlv: Tlv, snapshot_tlv: Tlv) -> ResourceSnapshot:
+        if (
+            snapshot_id_tlv.type != TlvType.RESOURCE_SNAPSHOT_ID
+            or snapshot_tlv.type != TlvType.RESOURCE_SNAPSHOT
+        ):
             raise ValueError("wrong resource snapshot TLV types")
         if len(snapshot_tlv.value) % _CAPABILITY_ENTRY.size:
             raise ValueError("invalid resource snapshot entry length")
         entries: dict[ResourceKey, int] = {}
         for offset in range(0, len(snapshot_tlv.value), _CAPABILITY_ENTRY.size):
-            key_value, flags, value, reserved = _CAPABILITY_ENTRY.unpack_from(snapshot_tlv.value, offset)
+            key_value, flags, value, reserved = _CAPABILITY_ENTRY.unpack_from(
+                snapshot_tlv.value, offset
+            )
             if flags or reserved:
                 raise ValueError("non-zero resource entry reserved field")
             key = ResourceKey(key_value)
@@ -846,7 +978,10 @@ class ResourceSnapshot:
         required = set(ResourceKey) - {ResourceKey.INVALID}
         missing = required - entries.keys()
         if missing:
-            raise ValueError(f"missing resource entries: {', '.join(key.name for key in sorted(missing, key=int))}")
+            raise ValueError(
+                "missing resource entries: "
+                f"{', '.join(key.name for key in sorted(missing, key=int))}"
+            )
         values = {key.name.lower(): entries[key] for key in required}
         return cls(snapshot_id=snapshot_id_tlv.as_u64(), **values)
 
@@ -864,20 +999,28 @@ class ResourceAllocation:
 
     def entries(self) -> tuple[tuple[AllocationKey, int], ...]:
         return tuple(
-            (AllocationKey[name.upper()], value)
-            for name, value in asdict(self).items()
-            if value
+            (AllocationKey[name.upper()], value) for name, value in asdict(self).items() if value
         )
 
     def to_tlv(self, type_: TlvType) -> Tlv:
-        if type_ not in (TlvType.RESOURCE_RESERVATION, TlvType.GRANTED_RESOURCES, TlvType.RELEASED_RESOURCES):
+        if type_ not in (
+            TlvType.RESOURCE_RESERVATION,
+            TlvType.GRANTED_RESOURCES,
+            TlvType.RELEASED_RESOURCES,
+        ):
             raise ValueError("invalid resource-allocation TLV type")
-        value = b"".join(_CAPABILITY_ENTRY.pack(int(key), 0, item, 0) for key, item in self.entries())
+        value = b"".join(
+            _CAPABILITY_ENTRY.pack(int(key), 0, item, 0) for key, item in self.entries()
+        )
         return Tlv(type_, value)
 
     @classmethod
-    def from_tlv(cls, tlv: Tlv) -> "ResourceAllocation":
-        if tlv.type not in (TlvType.RESOURCE_RESERVATION, TlvType.GRANTED_RESOURCES, TlvType.RELEASED_RESOURCES):
+    def from_tlv(cls, tlv: Tlv) -> ResourceAllocation:
+        if tlv.type not in (
+            TlvType.RESOURCE_RESERVATION,
+            TlvType.GRANTED_RESOURCES,
+            TlvType.RELEASED_RESOURCES,
+        ):
             raise ValueError("invalid resource-allocation TLV type")
         if len(tlv.value) % _CAPABILITY_ENTRY.size:
             raise ValueError("invalid resource-allocation entry length")
@@ -922,29 +1065,45 @@ class ResourcePool:
 
     def snapshot(self) -> ResourceSnapshot:
         self._snapshot_id += 1
-        active = sum(item.state in (OperationState.ACTIVE, OperationState.COMPLETE) for item in self.operation_reservations.values())
+        active = sum(
+            item.state in (OperationState.ACTIVE, OperationState.COMPLETE)
+            for item in self.operation_reservations.values()
+        )
         bitmap = sum(item.bitmap_bytes for item in self.operation_reservations.values())
         ranges = sum(item.accumulator_ranges for item in self.operation_reservations.values())
         replay = sum(item.replay_slots for item in self.operation_reservations.values())
         routes = sum(item.route_entries for item in self.operation_reservations.values())
-        replication_groups = sum(item.replication_groups for item in self.group_reservations.values())
-        replication_entries = sum(item.replication_entries for item in self.group_reservations.values())
-        total_replication_groups = self.capabilities.max_replication_groups * self.capabilities.max_installed_groups
-        total_replication_entries = total_replication_groups * self.capabilities.max_result_destinations_per_group
+        replication_groups = sum(
+            item.replication_groups for item in self.group_reservations.values()
+        )
+        replication_entries = sum(
+            item.replication_entries for item in self.group_reservations.values()
+        )
+        total_replication_groups = (
+            self.capabilities.max_replication_groups * self.capabilities.max_installed_groups
+        )
+        total_replication_entries = (
+            total_replication_groups * self.capabilities.max_result_destinations_per_group
+        )
         return ResourceSnapshot(
             snapshot_id=self._snapshot_id,
             free_group_slots=self.capabilities.max_installed_groups - len(self.group_reservations),
-            free_operation_contexts=self.capabilities.max_operation_contexts - len(self.operation_reservations),
+            free_operation_contexts=self.capabilities.max_operation_contexts
+            - len(self.operation_reservations),
             free_active_operation_slots=self.capabilities.max_active_operations_global - active,
             free_phase_bitmap_bytes=self.capabilities.total_phase_bitmap_pool_bytes - bitmap,
             free_accumulator_ranges=self.capabilities.max_active_accumulator_ranges_global - ranges,
             free_replay_output_slots=self.capabilities.total_replay_output_slots - replay,
-            free_route_entries=self.capabilities.max_operation_result_route_ranges * self.capabilities.max_operation_contexts - routes,
+            free_route_entries=self.capabilities.max_operation_result_route_ranges
+            * self.capabilities.max_operation_contexts
+            - routes,
             free_replication_groups=total_replication_groups - replication_groups,
             free_replication_entries=total_replication_entries - replication_entries,
         )
 
-    def stage_group(self, key: tuple[int, int], descriptor: GroupDescriptor | None = None) -> GroupReservation:
+    def stage_group(
+        self, key: tuple[int, int], descriptor: GroupDescriptor | None = None
+    ) -> GroupReservation:
         if key in self.group_reservations:
             return self.group_reservations[key]
         if len(self.group_reservations) >= self.capabilities.max_installed_groups:
@@ -952,7 +1111,11 @@ class ResourcePool:
         if descriptor is not None:
             self.capabilities.validate_group(descriptor)
         groups = len(descriptor.replication_groups) if descriptor is not None else 0
-        entries = sum(len(group.entries) for group in descriptor.replication_groups) if descriptor is not None else 0
+        entries = (
+            sum(len(group.entries) for group in descriptor.replication_groups)
+            if descriptor is not None
+            else 0
+        )
         snapshot = self.snapshot()
         if groups > snapshot.free_replication_groups or entries > snapshot.free_replication_entries:
             raise PrismError(Status.NO_REPLICATION_RESOURCE, "insufficient replication resources")
@@ -965,13 +1128,17 @@ class ResourcePool:
             raise PrismError(Status.GROUP_BUSY, "group still owns operations")
         self.group_reservations.pop(key, None)
 
-    def prepare_operation(self, key: tuple[int, int, int, int], descriptor: OperationDescriptor) -> OperationReservation:
+    def prepare_operation(
+        self, key: tuple[int, int, int, int], descriptor: OperationDescriptor
+    ) -> OperationReservation:
         existing = self.operation_reservations.get(key)
         if existing is not None:
             return existing
         self.capabilities.validate_operation(descriptor)
         snapshot = self.snapshot()
-        allocation = PhaseBitmapAllocation.calculate(descriptor.expected_chunks, descriptor.result_delivery_role)
+        allocation = PhaseBitmapAllocation.calculate(
+            descriptor.expected_chunks, descriptor.result_delivery_role
+        )
         if snapshot.free_operation_contexts <= 0:
             raise PrismError(Status.NO_OPERATION_SLOT, "no operation-context slot")
         if allocation.total_bytes > snapshot.free_phase_bitmap_bytes:
@@ -1003,7 +1170,10 @@ class ResourcePool:
             raise PrismError(Status.NOT_FOUND, "operation was not prepared")
         if reservation.state == OperationState.ACTIVE:
             return reservation
-        active = sum(item.state in (OperationState.ACTIVE, OperationState.COMPLETE) for item in self.operation_reservations.values())
+        active = sum(
+            item.state in (OperationState.ACTIVE, OperationState.COMPLETE)
+            for item in self.operation_reservations.values()
+        )
         if active >= self.capabilities.max_active_operations_global:
             raise PrismError(Status.NO_OPERATION_SLOT, "no active-operation slot")
         updated = OperationReservation(**{**asdict(reservation), "state": OperationState.ACTIVE})
@@ -1110,7 +1280,9 @@ class ReliableOperationModel:
         return self.phase.complete and self.outstanding_retries == 0
 
     def _advance_window(self) -> None:
-        while self.window_base < self.expected_chunks and self.phase.aggregation_done(self.window_base):
+        while self.window_base < self.expected_chunks and self.phase.aggregation_done(
+            self.window_base
+        ):
             self.window_base += 1
 
 
@@ -1135,7 +1307,9 @@ class ReliableSender:
         previous = self.pending.get(key)
         if previous and previous.payload_digest != digest:
             raise PrismError(Status.TXN_CONFLICT, "same peer/chunk retained with different payload")
-        self.pending[key] = PendingTransfer(peer_id, chunk, digest, now, previous.retries if previous else 0)
+        self.pending[key] = PendingTransfer(
+            peer_id, chunk, digest, now, previous.retries if previous else 0
+        )
 
     def acknowledge(self, peer_id: int, chunk: int) -> bool:
         return self.pending.pop((peer_id, chunk), None) is not None
@@ -1188,7 +1362,9 @@ class ReplayCache:
         previous = self._entries.get(key)
         if previous is not None:
             if previous.command != command or previous.digest != digest:
-                raise PrismError(Status.TXN_CONFLICT, "Transaction ID reused with different command or payload")
+                raise PrismError(
+                    Status.TXN_CONFLICT, "Transaction ID reused with different command or payload"
+                )
             return previous.response
         response = action()
         self._entries[key] = ReplayOutcome(command, digest, response, now)

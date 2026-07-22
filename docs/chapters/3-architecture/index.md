@@ -1,50 +1,47 @@
 # 3. Architecture
-> What are the major components, and where should I read next?
 
-<figure markdown="span">
-  ![PRISM Switch Architecture Overview](../../assets/images/architecture/overview.png){ loading=lazy }
-<figcaption>
-<strong>PRISM microarchitecture overview.</strong>
-<i>N</i> denotes the number of ingress ports, while <i>K</i> denotes the number of internal packet-injection sources.
-</figcaption>
-</figure>
+The current implementation is a parameterized collective node with two full-duplex 512-bit
+AXI4-Stream ports in its default build. It consumes locally addressed PRISM
+CONTROL and DATA frames, performs a configured reduction, and generates CONTROL
+responses and RES frames. Unsupported or non-local traffic is drained; the RTL
+does not provide transparent Layer-2 forwarding.
 
-Network switches implement the routing, arbitration, and switching functions of
-switched-media networks. Switches also implement buffer management mechanisms and,
-in the case of lossless networks, the associated flow control.
-
-PRISM extends this conventional switch datapath with support for
-**in-network collective reduction**. Ordinary Ethernet frames follow the
-transparent Layer-2 forwarding path, whereas locally addressed PRISM packets
-may be consumed by the control, aggregation, result-delivery, or progress paths
-defined by the protocol.
-
+The ordered RTL inventory is `repo/prism-hdl/rtl.f`. The reusable root is
+`prism_collective_core`; `prism_sim_top`, `prism_vivado_top`, and
+`prism_open_nic_250mhz` adapt it to verification, standalone Vivado, and the
+OpenNIC plugin boundary respectively.
 
 ## Next pages
 
 <div class="grid cards" markdown>
 
--   :material-map-marker-path: **Introduction**
+-   :material-protocol: **Wire protocol**
 
-    Move through [3.1 Protocol](1.protocol.md),
-    [3.2 Pipeline](2.pipeline.md) pages.
+    Read [3.1 Protocol](1.protocol.md) for packet layouts, registries, and
+    configuration records shared by RTL and the CCL.
 
--   :material-chip: **Modules view**
+-   :material-transit-connection-variant: **Implemented pipeline**
 
-    Start with [3.5 Interfaces](4-interfaces/index.md), then read the
-    [top-level contracts](4-interfaces/top/prism_switch_top.md) before moving
-    down through main units and components.
+    Follow [3.2 Pipeline](2.pipeline.md) from per-port ingress through control,
+    reduction, result storage, and egress.
+
+-   :material-tune-variant: **Configuration**
+
+    Use [3.3 Parameters](4.parameters.md) to distinguish wire constants,
+    elaboration parameters, runtime state, and derived values.
+
+-   :material-view-module: **RTL modules**
+
+    Consult [3.4 RTL module inventory](4-interfaces/index.md) for every package,
+    synthesizable module, top-level adapter, and verification harness.
 
 </div>
 
-## Design and implementation status
+## Implementation boundary
 
-The documentation uses present tense for normative protocol rules and selected
-architecture contracts. That tense does **not** by itself mean that matching RTL
-exists.
-
-The [Protocol](1.protocol.md) owns wire meaning and interoperability. The
-[Pipeline](2.pipeline.md) and [Interfaces](4-interfaces/index.md) own selected
-architecture. [Parameters](4.parameters.md) owns compiled capacities and
-feature selection. Measured implementation and verification evidence belongs
-only under [Results](../4-results/index.md).
+The [Protocol](1.protocol.md) defines the shared wire ABI and explicitly
+separates registry assignments from RTL support. [Pipeline](2.pipeline.md),
+[Parameters](4.parameters.md), and the [module inventory](4-interfaces/index.md)
+describe the implementation present in `repo/prism-hdl`. Verification claims
+require a named suite under `repo/prism-hdl/verification` or
+`repo/prism-ccl/tests`.

@@ -6,36 +6,31 @@ import hashlib
 import math
 import struct
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
+from enum import Enum
 
 from .constants import (
-    BYTES_PER_ELEMENT,
-    PARTIAL_BYTES_PER_ELEMENT,
-    CHUNK_PAYLOAD_BYTES,
     COMMAND_TLV_SCHEMAS,
     CONTROL_HEADER_BYTES,
     CONTROL_WORD_BYTES,
     DATA_HEADER_BYTES,
     PROGRESS_HEADER_BYTES,
     RESULT_HEADER_BYTES,
+    VERSION_MAJOR,
+    VERSION_MINOR,
     ControlCommand,
     ControlFlag,
     DataFlag,
     Opcode,
-    PartialWireFormat,
     ProgressFlag,
     ProgressPeerKind,
     ProgressReason,
     Status,
     TlvFlag,
     TlvType,
-    VERSION_MAJOR,
-    VERSION_MINOR,
-    WireFormat,
 )
 from .errors import ProtocolDecodeError
-
 
 _CONTROL_HEADER = struct.Struct("!QQHBBHH")
 _DATA_HEADER = struct.Struct("!QHHHIH3sB")
@@ -62,7 +57,7 @@ def _unpack_u24(value: bytes) -> int:
     return int.from_bytes(value, "big")
 
 
-def _enum(enum_type: type, value: int, field_name: str):
+def _enum[EnumT: Enum](enum_type: type[EnumT], value: int, field_name: str) -> EnumT:
     try:
         return enum_type(value)
     except ValueError as exc:
@@ -81,7 +76,7 @@ class ControlWord:
         return bytes(((self.major << 4) | self.minor, int(self.opcode)))
 
     @classmethod
-    def unpack(cls, data: bytes) -> "ControlWord":
+    def unpack(cls, data: bytes) -> ControlWord:
         if len(data) != CONTROL_WORD_BYTES:
             raise ProtocolDecodeError("PRISM control word must be 2 bytes")
         major, minor = data[0] >> 4, data[0] & 0x0F
@@ -117,10 +112,12 @@ class ProtocolVersionRange:
         )
 
     @classmethod
-    def unpack(cls, data: bytes) -> "ProtocolVersionRange":
+    def unpack(cls, data: bytes) -> ProtocolVersionRange:
         if len(data) != _PROTOCOL_VERSION_RANGE.size:
             raise ProtocolDecodeError("protocol version range must be 8 bytes")
-        minimum_major, minimum_minor, maximum_major, maximum_minor, reserved = _PROTOCOL_VERSION_RANGE.unpack(data)
+        minimum_major, minimum_minor, maximum_major, maximum_minor, reserved = (
+            _PROTOCOL_VERSION_RANGE.unpack(data)
+        )
         if reserved:
             raise ProtocolDecodeError("non-zero protocol version range reserved field")
         result = cls(minimum_major, minimum_minor, maximum_major, maximum_minor)
@@ -129,9 +126,13 @@ class ProtocolVersionRange:
         return result
 
     def supports(self, major: int, minor: int) -> bool:
-        return (self.minimum_major, self.minimum_minor) <= (major, minor) <= (
-            self.maximum_major,
-            self.maximum_minor,
+        return (
+            (self.minimum_major, self.minimum_minor)
+            <= (major, minor)
+            <= (
+                self.maximum_major,
+                self.maximum_minor,
+            )
         )
 
 
@@ -146,7 +147,7 @@ class GroupHandleWire:
         return _GROUP_HANDLE.pack(self.group_id, self.generation)
 
     @classmethod
-    def unpack(cls, data: bytes) -> "GroupHandleWire":
+    def unpack(cls, data: bytes) -> GroupHandleWire:
         if len(data) != _GROUP_HANDLE.size:
             raise ProtocolDecodeError("group handle must be 4 bytes")
         return cls(*_GROUP_HANDLE.unpack(data))
@@ -163,7 +164,7 @@ class OperationHandleWire:
         return _OPERATION_HANDLE.pack(self.operation_id, self.generation)
 
     @classmethod
-    def unpack(cls, data: bytes) -> "OperationHandleWire":
+    def unpack(cls, data: bytes) -> OperationHandleWire:
         if len(data) != _OPERATION_HANDLE.size:
             raise ProtocolDecodeError("operation handle must be 6 bytes")
         return cls(*_OPERATION_HANDLE.unpack(data))
@@ -218,7 +219,7 @@ class ControlHeader:
         )
 
     @classmethod
-    def unpack(cls, data: bytes) -> "ControlHeader":
+    def unpack(cls, data: bytes) -> ControlHeader:
         if len(data) != CONTROL_HEADER_BYTES:
             raise ProtocolDecodeError("PM_OP_CONTROL header must be 24 bytes")
         cookie, txn, command, flags, status, index, count = _CONTROL_HEADER.unpack(data)
@@ -252,10 +253,14 @@ class Tlv:
             raise ValueError("non-zero reserved TLV flags")
         _require_range("TLV value length", len(self.value), 32)
         padding = (-len(self.value)) % 8
-        return _TLV_HEADER.pack(int(self.type), int(self.flags), len(self.value)) + self.value + bytes(padding)
+        return (
+            _TLV_HEADER.pack(int(self.type), int(self.flags), len(self.value))
+            + self.value
+            + bytes(padding)
+        )
 
     @classmethod
-    def u64(cls, type_: TlvType, value: int, flags: TlvFlag = TlvFlag.MANDATORY) -> "Tlv":
+    def u64(cls, type_: TlvType, value: int, flags: TlvFlag = TlvFlag.MANDATORY) -> Tlv:
         _require_range(type_.name, value, 64)
         return cls(type_, value.to_bytes(8, "big"), flags)
 
@@ -292,7 +297,7 @@ def parse_tlvs(data: bytes) -> tuple[Tlv, ...]:
             type_ = TlvType(type_value)
         except ValueError:
             if flags_value & int(TlvFlag.MANDATORY):
-                raise ProtocolDecodeError(f"unknown mandatory TLV 0x{type_value:04x}")
+                raise ProtocolDecodeError(f"unknown mandatory TLV 0x{type_value:04x}") from None
             continue
         result.append(Tlv(type_, value, TlvFlag(flags_value)))
     return tuple(result)
@@ -316,7 +321,8 @@ def validate_tlv_schema(command: ControlCommand, tlvs: Iterable[Tlv]) -> tuple[T
     missing = schema.mandatory - seen.keys()
     if missing:
         raise ProtocolDecodeError(
-            f"missing mandatory TLVs for {command.name}: {', '.join(item.name for item in sorted(missing, key=int))}"
+            f"missing mandatory TLVs for {command.name}: "
+            f"{', '.join(item.name for item in sorted(missing, key=int))}"
         )
     return values
 
@@ -330,7 +336,7 @@ class ControlFrame:
         return ControlWord(Opcode.CONTROL).pack() + self.header.pack() + self.payload
 
     @classmethod
-    def unpack(cls, data: bytes) -> "ControlFrame":
+    def unpack(cls, data: bytes) -> ControlFrame:
         if len(data) < CONTROL_WORD_BYTES + CONTROL_HEADER_BYTES:
             raise ProtocolDecodeError("truncated PM_OP_CONTROL frame")
         word = ControlWord.unpack(data[:2])
@@ -339,14 +345,20 @@ class ControlFrame:
         return cls(ControlHeader.unpack(data[2:26]), data[26:])
 
     @classmethod
-    def from_tlvs(cls, header: ControlHeader, tlvs: Iterable[Tlv]) -> "ControlFrame":
+    def from_tlvs(cls, header: ControlHeader, tlvs: Iterable[Tlv]) -> ControlFrame:
         return cls(header, pack_tlvs(tlvs))
 
     def tlvs(self) -> tuple[Tlv, ...]:
         if self.header.fragment_count != 1:
-            raise ProtocolDecodeError("fragmented control payload must be reassembled before TLV parsing")
+            raise ProtocolDecodeError(
+                "fragmented control payload must be reassembled before TLV parsing"
+            )
         parsed = parse_tlvs(self.payload)
-        return validate_tlv_schema(self.header.command, parsed) if self.header.status == Status.OK else parsed
+        return (
+            validate_tlv_schema(self.header.command, parsed)
+            if self.header.status == Status.OK
+            else parsed
+        )
 
     @property
     def payload_digest(self) -> bytes:
@@ -375,11 +387,15 @@ class DataHeader:
             int(self.flags),
         )
 
-    def pack(self, payload: bytes) -> bytes:
+    def pack(self, payload: bytes, *, allow_accumulation_inexact: bool = False) -> bytes:
+        if (self.flags & DataFlag.ACCUMULATION_INEXACT) and not allow_accumulation_inexact:
+            raise ValueError("endpoint-originated DATA cannot assert ACCUMULATION_INEXACT")
         return ControlWord(Opcode.COL_DATA).pack() + self.pack_header() + payload
 
     @classmethod
-    def unpack(cls, data: bytes) -> tuple["DataHeader", bytes]:
+    def unpack(
+        cls, data: bytes, *, laboratory_extension_enabled: bool = True
+    ) -> tuple[DataHeader, bytes]:
         if len(data) < CONTROL_WORD_BYTES + DATA_HEADER_BYTES:
             raise ProtocolDecodeError("truncated PM_OP_COL_DATA frame")
         word = ControlWord.unpack(data[:2])
@@ -389,6 +405,8 @@ class DataHeader:
         known_flags = sum(int(flag) for flag in DataFlag)
         if flags & ~known_flags:
             raise ProtocolDecodeError("non-zero reserved data flags")
+        if (flags & int(DataFlag.ACCUMULATION_INEXACT)) and not laboratory_extension_enabled:
+            raise ProtocolDecodeError("ACCUMULATION_INEXACT requires the laboratory extension")
         identity = OperationIdentity(job, gid, ggen, oid, ogen)
         return cls(identity, contributor, _unpack_u24(chunk), DataFlag(flags)), data[26:]
 
@@ -419,7 +437,9 @@ class ResultHeader:
         return ControlWord(Opcode.COL_RES).pack() + self.pack_header() + payload
 
     @classmethod
-    def unpack(cls, data: bytes) -> tuple["ResultHeader", bytes]:
+    def unpack(
+        cls, data: bytes, *, laboratory_extension_enabled: bool = True
+    ) -> tuple[ResultHeader, bytes]:
         if len(data) < CONTROL_WORD_BYTES + RESULT_HEADER_BYTES:
             raise ProtocolDecodeError("truncated PM_OP_COL_RES frame")
         word = ControlWord.unpack(data[:2])
@@ -429,6 +449,8 @@ class ResultHeader:
         known_flags = sum(int(flag) for flag in DataFlag)
         if flags & ~known_flags:
             raise ProtocolDecodeError("non-zero reserved result flags")
+        if (flags & int(DataFlag.ACCUMULATION_INEXACT)) and not laboratory_extension_enabled:
+            raise ProtocolDecodeError("ACCUMULATION_INEXACT requires the laboratory extension")
         identity = OperationIdentity(job, gid, ggen, oid, ogen)
         return cls(identity, path, _unpack_u24(chunk), DataFlag(flags)), data[26:]
 
@@ -486,7 +508,7 @@ class ProgressHeader:
         return ControlWord(Opcode.COL_PROGRESS).pack() + self.pack_header() + selective_ack_bitmap
 
     @classmethod
-    def unpack(cls, data: bytes) -> tuple["ProgressHeader", bytes]:
+    def unpack(cls, data: bytes) -> tuple[ProgressHeader, bytes]:
         if len(data) < CONTROL_WORD_BYTES + PROGRESS_HEADER_BYTES:
             raise ProtocolDecodeError("truncated PM_OP_COL_PROGRESS frame")
         word = ControlWord.unpack(data[:2])
@@ -595,7 +617,9 @@ class ControlReassembler:
             raise ProtocolDecodeError("staged control transaction exceeds capability")
         if len(transaction.fragments) != transaction.fragment_count:
             return None
-        payload = b"".join(transaction.fragments[index] for index in range(transaction.fragment_count))
+        payload = b"".join(
+            transaction.fragments[index] for index in range(transaction.fragment_count)
+        )
         del self._transactions[key]
         return validate_tlv_schema(header.command, parse_tlvs(payload))
 
@@ -609,61 +633,6 @@ class ControlReassembler:
         for key in expired:
             del self._transactions[key]
         return expired
-
-
-def expected_chunks(element_count: int, elements_per_chunk: int) -> int:
-    if element_count <= 0 or elements_per_chunk <= 0:
-        raise ValueError("element_count and elements_per_chunk must be positive")
-    result = (element_count + elements_per_chunk - 1) // elements_per_chunk
-    if result >= 1 << 24:
-        if result > 1 << 24:
-            raise OverflowError("expected chunk count exceeds 24-bit namespace")
-    return result
-
-
-def elements_in_chunk(element_count: int, elements_per_chunk: int, chunk_index: int) -> int:
-    count = expected_chunks(element_count, elements_per_chunk)
-    if not 0 <= chunk_index < count:
-        raise ValueError("chunk index is outside the operation")
-    first = chunk_index * elements_per_chunk
-    return min(elements_per_chunk, element_count - first)
-
-
-def expected_payload_bytes(
-    element_count: int,
-    elements_per_chunk: int,
-    chunk_index: int,
-    wire_format: WireFormat | PartialWireFormat,
-) -> int:
-    try:
-        element_bytes = (
-            PARTIAL_BYTES_PER_ELEMENT[wire_format]
-            if isinstance(wire_format, PartialWireFormat)
-            else BYTES_PER_ELEMENT[wire_format]
-        )
-    except KeyError as exc:
-        raise ValueError(f"unsupported wire format {wire_format!r}") from exc
-    result = elements_in_chunk(element_count, elements_per_chunk, chunk_index) * element_bytes
-    if result > CHUNK_PAYLOAD_BYTES:
-        raise OverflowError("chunk payload exceeds PM_CHUNK_PAYLOAD_BYTES")
-    return result
-
-
-def validate_payload_length(
-    actual_bytes: int,
-    element_count: int,
-    elements_per_chunk: int,
-    chunk_index: int,
-    wire_format: WireFormat | PartialWireFormat,
-) -> int:
-    expected = expected_payload_bytes(element_count, elements_per_chunk, chunk_index, wire_format)
-    prism_bytes = CONTROL_WORD_BYTES + DATA_HEADER_BYTES + expected
-    padding = max(0, 46 - prism_bytes)
-    if actual_bytes not in (expected, expected + padding):
-        raise ProtocolDecodeError(
-            f"logical payload length {actual_bytes} does not match expected {expected}"
-        )
-    return expected
 
 
 assert _CONTROL_HEADER.size == CONTROL_HEADER_BYTES

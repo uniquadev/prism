@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from typing import Iterable, Mapping, Protocol
+from collections.abc import Iterable, Mapping
+from contextlib import suppress
+from dataclasses import dataclass
+from typing import Protocol
 
-from .constants import (
+from ..protocol.constants import (
     CHUNK_PAYLOAD_BYTES,
     RESPONSE_FOR,
     VERSION_MAJOR,
@@ -21,8 +23,8 @@ from .constants import (
     Status,
     TlvType,
 )
-from .errors import InvalidHandleError, PrismError, ProtocolDecodeError
-from .model import (
+from ..protocol.errors import InvalidHandleError, PrismError, ProtocolDecodeError
+from ..protocol.models import (
     Capabilities,
     GenerationStore,
     GroupDescriptor,
@@ -32,7 +34,7 @@ from .model import (
     group_handle_tlv,
     operation_handle_tlv,
 )
-from .wire import (
+from ..protocol.serialization import (
     ControlFrame,
     ControlHeader,
     ControlReassembler,
@@ -98,18 +100,27 @@ class WireSwitchClient:
         session_cookie: int = 0,
         transaction_id: int | None = None,
     ) -> ControlResponse:
-        transaction_id = self._allocate_transaction_id() if transaction_id is None else transaction_id
+        transaction_id = (
+            self._allocate_transaction_id() if transaction_id is None else transaction_id
+        )
         payload = pack_tlvs(tuple(tlvs))
         fragments = self._fragment_request(command, session_cookie, transaction_id, payload)
         last_error: Exception | None = None
         for _attempt in range(self.retries + 1):
             try:
                 response_frames = self.transport.exchange(fragments, self.timeout_seconds)
-                return self._parse_response(command, session_cookie, transaction_id, response_frames)
+                return self._parse_response(
+                    command, session_cookie, transaction_id, response_frames
+                )
             except TimeoutError as exc:
                 last_error = exc
                 continue
-        raise PrismError(Status.TIMEOUT, f"no response after {self.retries + 1} attempts", self.switch_id, transaction_id) from last_error
+        raise PrismError(
+            Status.TIMEOUT,
+            f"no response after {self.retries + 1} attempts",
+            self.switch_id,
+            transaction_id,
+        ) from last_error
 
     def _fragment_request(
         self,
@@ -160,20 +171,34 @@ class WireSwitchClient:
                 raise ProtocolDecodeError("response transaction or command mismatch")
             if not header.flags & ControlFlag.RESPONSE:
                 raise ProtocolDecodeError("control response lacks RESPONSE flag")
-            if request_command not in (ControlCommand.CAPS_QUERY, ControlCommand.SESSION_OPEN):
-                if header.session_cookie != request_cookie:
-                    raise ProtocolDecodeError("response Session Cookie mismatch")
+            if (
+                request_command
+                not in (
+                    ControlCommand.CAPS_QUERY,
+                    ControlCommand.SESSION_OPEN,
+                )
+                and header.session_cookie != request_cookie
+            ):
+                raise ProtocolDecodeError("response Session Cookie mismatch")
             response_header = header
             if header.fragment_count == 1:
                 parsed = parse_tlvs(frame.payload)
-                response_tlvs = validate_tlv_schema(header.command, parsed) if header.status == Status.OK else parsed
+                response_tlvs = (
+                    validate_tlv_schema(header.command, parsed)
+                    if header.status == Status.OK
+                    else parsed
+                )
             else:
                 response_tlvs = reassembler.add(frame)
         if response_header is None or response_tlvs is None:
             raise ProtocolDecodeError("incomplete fragmented response")
         if response_header.status != Status.OK:
             detail = _optional_tlv(response_tlvs, TlvType.ERROR_DETAIL)
-            message = detail.value.decode("utf-8", errors="replace") if detail else response_header.status.name
+            message = (
+                detail.value.decode("utf-8", errors="replace")
+                if detail
+                else response_header.status.name
+            )
             raise PrismError(response_header.status, message, self.switch_id, transaction_id)
         return ControlResponse(response_header, response_tlvs)
 
@@ -236,7 +261,9 @@ class PrismManager:
         self.groups: list[CollectiveGroupHandle] = []
         self.operations: list[CollectiveOperationHandle] = []
 
-    def query_capabilities(self, switch_ids: Iterable[str] | None = None) -> dict[str, Capabilities]:
+    def query_capabilities(
+        self, switch_ids: Iterable[str] | None = None
+    ) -> dict[str, Capabilities]:
         result: dict[str, Capabilities] = {}
         for switch_id in self._switches(switch_ids):
             response = self.clients[switch_id].call(ControlCommand.CAPS_QUERY)
@@ -245,8 +272,15 @@ class PrismManager:
                 _required_tlv(response.tlvs, TlvType.PROTOCOL_VERSION_RANGE).value
             )
             if not version_range.supports(VERSION_MAJOR, VERSION_MINOR):
-                raise PrismError(Status.UNSUPPORTED_VERSION, "switch does not support PRISM Protocol 1.0", switch_id)
-            capabilities = Capabilities.from_tlv(boot, _required_tlv(response.tlvs, TlvType.CAPABILITIES))
+                raise PrismError(
+                    Status.UNSUPPORTED_VERSION,
+                    "switch does not support PRISM Protocol 1.0",
+                    switch_id,
+                )
+            capabilities = Capabilities.from_tlvs(
+                boot,
+                _required_tlv(response.tlvs, TlvType.CAPABILITIES),
+            )
             previous = self.device_boot_ids.get(switch_id)
             if previous is not None and previous != boot:
                 self._invalidate_switch(switch_id)
@@ -272,7 +306,9 @@ class PrismManager:
         self.query_capabilities(targets)
         for switch_id in targets:
             if security_profile not in self.capabilities[switch_id].security_profiles:
-                raise PrismError(Status.UNSUPPORTED_FEATURE, "security profile is not supported", switch_id)
+                raise PrismError(
+                    Status.UNSUPPORTED_FEATURE, "security profile is not supported", switch_id
+                )
         cookies: dict[str, int] = {}
         boots: dict[str, int] = {}
         deadlines: dict[str, float] = {}
@@ -296,10 +332,10 @@ class PrismManager:
                 opened.append(switch_id)
         except Exception:
             for switch_id in opened:
-                try:
-                    self.clients[switch_id].call(ControlCommand.SESSION_CLOSE, session_cookie=cookies[switch_id])
-                except Exception:
-                    pass
+                with suppress(Exception):
+                    self.clients[switch_id].call(
+                        ControlCommand.SESSION_CLOSE, session_cookie=cookies[switch_id]
+                    )
             raise
         session = SessionHandle(job_id, cookies, boots, deadlines)
         self.sessions.append(session)
@@ -309,7 +345,9 @@ class PrismManager:
         self._require_session(session)
         result: dict[str, ResourceSnapshot] = {}
         for switch_id, cookie in session.cookies.items():
-            response = self.clients[switch_id].call(ControlCommand.RESOURCE_QUERY, session_cookie=cookie)
+            response = self.clients[switch_id].call(
+                ControlCommand.RESOURCE_QUERY, session_cookie=cookie
+            )
             result[switch_id] = ResourceSnapshot.from_tlvs(
                 _required_tlv(response.tlvs, TlvType.RESOURCE_SNAPSHOT_ID),
                 _required_tlv(response.tlvs, TlvType.RESOURCE_SNAPSHOT),
@@ -329,7 +367,11 @@ class PrismManager:
 
     def close_session(self, session: SessionHandle) -> None:
         self._require_session(session)
-        active = [operation for operation in self.operations if operation.valid and operation.group.session is session]
+        active = [
+            operation
+            for operation in self.operations
+            if operation.valid and operation.group.session is session
+        ]
         for operation in active:
             self.abort_operation(operation)
             self.release_operation(operation)
@@ -376,7 +418,7 @@ class PrismManager:
                     try:
                         state = self._group_status_one(session, wire, switch_id)
                     except Exception:
-                        raise commit_error
+                        raise commit_error from None
                     if state != GroupState.INSTALLED:
                         raise commit_error
                 else:
@@ -394,10 +436,11 @@ class PrismManager:
                 try:
                     installed = switch_id in committed
                     if not installed:
-                        try:
-                            installed = self._group_status_one(session, wire, switch_id) == GroupState.INSTALLED
-                        except Exception:
-                            pass
+                        with suppress(Exception):
+                            installed = (
+                                self._group_status_one(session, wire, switch_id)
+                                == GroupState.INSTALLED
+                            )
                     self.clients[switch_id].call(
                         ControlCommand.GROUP_DESTROY if installed else ControlCommand.GROUP_ABORT,
                         [group_handle_tlv(wire)],
@@ -452,10 +495,20 @@ class PrismManager:
             required_reliability = (
                 FeatureFlag.RELIABLE_HOP_BY_HOP | FeatureFlag.SELECTIVE_ACK | FeatureFlag.RESULT_ACK
             )
-            if self.capabilities[switch_id].feature_flags & required_reliability != required_reliability:
-                raise PrismError(Status.UNSUPPORTED_FEATURE, "mandatory reliable-transfer profile is absent", switch_id)
+            if (
+                self.capabilities[switch_id].feature_flags & required_reliability
+                != required_reliability
+            ):
+                raise PrismError(
+                    Status.UNSUPPORTED_FEATURE,
+                    "mandatory reliable-transfer profile is absent",
+                    switch_id,
+                )
             self.capabilities[switch_id].validate_operation(descriptor)
-        namespace = f"job:{group.session.job_id}:group:{group.wire.group_id}:{group.wire.generation}:operation"
+        namespace = (
+            f"job:{group.session.job_id}:group:{group.wire.group_id}:"
+            f"{group.wire.generation}:operation"
+        )
         generation = self.generations.allocate(namespace, operation_id, 32)
         wire = OperationHandleWire(operation_id, generation)
         prepared: list[str] = []
@@ -495,7 +548,9 @@ class PrismManager:
             if rollback_complete:
                 self.generations.release(namespace, operation_id)
             raise
-        operation = CollectiveOperationHandle(group, wire, targets, dict(descriptors), granted_resources)
+        operation = CollectiveOperationHandle(
+            group, wire, targets, dict(descriptors), granted_resources
+        )
         self.operations.append(operation)
         return operation
 
@@ -527,14 +582,12 @@ class PrismManager:
                         )
         except Exception:
             for switch_id in operation.switch_ids:
-                try:
+                with suppress(Exception):
                     self.clients[switch_id].call(
                         ControlCommand.OP_ABORT,
                         [operation_handle_tlv(operation.wire)],
                         session_cookie=operation.group.session.cookies[switch_id],
                     )
-                except Exception:
-                    pass
             operation.state = OperationState.ABORTED
             raise
         operation.state = OperationState.ACTIVE
@@ -553,7 +606,10 @@ class PrismManager:
 
     def operation_status(self, operation: CollectiveOperationHandle) -> dict[str, OperationState]:
         self._require_operation(operation)
-        return {switch_id: self._operation_status_one(operation, switch_id) for switch_id in operation.switch_ids}
+        return {
+            switch_id: self._operation_status_one(operation, switch_id)
+            for switch_id in operation.switch_ids
+        }
 
     def wait_operation(
         self,
@@ -585,12 +641,17 @@ class PrismManager:
                 [operation_handle_tlv(operation.wire)],
                 session_cookie=operation.group.session.cookies[switch_id],
             )
-        namespace = f"job:{operation.group.session.job_id}:group:{operation.group.wire.group_id}:{operation.group.wire.generation}:operation"
+        namespace = (
+            f"job:{operation.group.session.job_id}:group:{operation.group.wire.group_id}:"
+            f"{operation.group.wire.generation}:operation"
+        )
         self.generations.release(namespace, operation.wire.operation_id)
         operation.state = OperationState.FREE
         operation.valid = False
 
-    def _operation_status_one(self, operation: CollectiveOperationHandle, switch_id: str) -> OperationState:
+    def _operation_status_one(
+        self, operation: CollectiveOperationHandle, switch_id: str
+    ) -> OperationState:
         response = self.clients[switch_id].call(
             ControlCommand.OP_STATUS,
             [operation_handle_tlv(operation.wire)],
@@ -617,7 +678,9 @@ class PrismManager:
             raise ValueError("unknown or empty switch set")
         return targets
 
-    def _validate_descriptor_targets(self, session: SessionHandle, descriptors: Mapping[str, GroupDescriptor]) -> tuple[str, ...]:
+    def _validate_descriptor_targets(
+        self, session: SessionHandle, descriptors: Mapping[str, GroupDescriptor]
+    ) -> tuple[str, ...]:
         targets = tuple(descriptors)
         if set(targets) != set(session.cookies):
             raise ValueError("group descriptors must cover the complete session tree")
@@ -639,7 +702,9 @@ class PrismManager:
 
         semantics = {(item.semantic, item.reduction_operator) for item in descriptors.values()}
         if len(semantics) != 1:
-            raise ValueError("all operation nodes must use the same collective semantic and operator")
+            raise ValueError(
+                "all operation nodes must use the same collective semantic and operator"
+            )
 
         if len(switch_ids) == 1:
             root = next(iter(switch_ids))
@@ -690,15 +755,36 @@ class PrismManager:
                     continue
                 child_count = sum(parent == switch_id for parent in parent_edges.values())
                 if child_count != group.expected_local_contributors:
-                    raise ValueError("INTERNAL/ROOT contributor count must equal its child-subtree count")
+                    raise ValueError(
+                        "INTERNAL/ROOT contributor count must equal its child-subtree count"
+                    )
 
-        arithmetic_tuple = descriptors[root].arithmetic_tuple
-        if any(item.arithmetic_tuple != arithmetic_tuple for item in descriptors.values()):
-            raise ValueError("Protocol 1.0 requires one tree-wide arithmetic tuple")
+        arithmetic_configuration = (
+            descriptors[root].input_format,
+            descriptors[root].accumulator_profile,
+            descriptors[root].partial_format,
+            descriptors[root].output_format,
+        )
+        if any(
+            (
+                item.input_format,
+                item.accumulator_profile,
+                item.partial_format,
+                item.output_format,
+            )
+            != arithmetic_configuration
+            for item in descriptors.values()
+        ):
+            raise ValueError("Protocol 1.0 requires one tree-wide arithmetic configuration")
 
         for switch_id, descriptor in descriptors.items():
-            group_ids = {group.group_id for group in group_descriptors[switch_id].replication_groups}
-            if any(route.replication_group_id not in group_ids for route in descriptor.result_range_routes):
+            group_ids = {
+                group.group_id for group in group_descriptors[switch_id].replication_groups
+            }
+            if any(
+                route.replication_group_id not in group_ids
+                for route in descriptor.result_range_routes
+            ):
                 raise ValueError("result route references an unknown local replication group")
 
     @staticmethod
@@ -745,59 +831,3 @@ def _optional_tlv(tlvs: Iterable[Tlv], type_: TlvType) -> Tlv | None:
     if len(matches) > 1:
         raise ProtocolDecodeError(f"duplicate {type_.name} TLV")
     return matches[0] if matches else None
-
-
-def prism_query_capabilities(manager: PrismManager, *args, **kwargs):
-    return manager.query_capabilities(*args, **kwargs)
-
-
-def prism_open_session(manager: PrismManager, *args, **kwargs):
-    return manager.open_session(*args, **kwargs)
-
-
-def prism_query_resources(manager: PrismManager, *args, **kwargs):
-    return manager.query_resources(*args, **kwargs)
-
-
-def prism_renew_session(manager: PrismManager, *args, **kwargs):
-    return manager.renew_session(*args, **kwargs)
-
-
-def prism_close_session(manager: PrismManager, *args, **kwargs):
-    return manager.close_session(*args, **kwargs)
-
-
-def prism_create_group(manager: PrismManager, *args, **kwargs):
-    return manager.create_group(*args, **kwargs)
-
-
-def prism_group_status(manager: PrismManager, *args, **kwargs):
-    return manager.group_status(*args, **kwargs)
-
-
-def prism_destroy_group(manager: PrismManager, *args, **kwargs):
-    return manager.destroy_group(*args, **kwargs)
-
-
-def prism_prepare_operation(manager: PrismManager, *args, **kwargs):
-    return manager.prepare_operation(*args, **kwargs)
-
-
-def prism_commit_operation(manager: PrismManager, *args, **kwargs):
-    return manager.commit_operation(*args, **kwargs)
-
-
-def prism_abort_operation(manager: PrismManager, *args, **kwargs):
-    return manager.abort_operation(*args, **kwargs)
-
-
-def prism_operation_status(manager: PrismManager, *args, **kwargs):
-    return manager.operation_status(*args, **kwargs)
-
-
-def prism_wait_operation(manager: PrismManager, *args, **kwargs):
-    return manager.wait_operation(*args, **kwargs)
-
-
-def prism_release_operation(manager: PrismManager, *args, **kwargs):
-    return manager.release_operation(*args, **kwargs)

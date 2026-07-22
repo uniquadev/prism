@@ -1,0 +1,3 @@
+# Each integration test regenerates its own capture directory.
+traces/*
+!traces/.gitkeep

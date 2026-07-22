@@ -1,12 +1,37 @@
 [project]
-name = "prism-protocol"
+name = "prism-ccl"
 version = "1.0.0"
-description = "PRISM Protocol 1.0 serialization, state, and host/AM coordination library"
+description = "Transport-independent PRISM collective communication library"
+license = "Apache-2.0"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
-    "scapy>=2.7.0",
+    "scapy==2.7.0",
 ]
+
+[project.scripts]
+prism-pcap = "prism_ccl.cli.pcap_dump:main"
+
+[dependency-groups]
+dev = [
+    "coverage==7.10.6",
+    "mypy==1.17.1",
+    "pytest==8.4.1",
+    "ruff==0.12.11",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+packages = ["prism_ccl"]
+mypy_path = "src"
 
 [tool.uv]
 package = true

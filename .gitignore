@@ -1,24 +1,45 @@
-# Python
+# Python caches and environments
 __pycache__/
-*.pyc
+*.py[cod]
+.mypy_cache/
 .pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.uv-cache/
 .venv/
+venv/
+*.egg-info/
 
-# MkDocs
+# Generated documentation
 site/
 .mkdocs-serve.*.log
 .tmp-*
 
-# Verilator / build artifacts
-/tmp/prism-rtl/
+# Build and simulator output
 build/
-dump.vcd
-dump.fst
+sim_build/
+*.vcd
+*.fst
+*.vvp
+results.xml
+*.result.xml
+*.results.xml
 
-# Traces
-repo/rtl/traces/
+# DUT-observed captures are regenerated per test.
+repo/prism-hdl/verification/traces/*
+!repo/prism-hdl/verification/traces/.gitkeep
 
-# Editor
+# Editors and local agents
 .vscode/
+.idea/
 *.swp
+*.swo
+*~
 .agents/
+
+# Operating systems
+.DS_Store
+Thumbs.db

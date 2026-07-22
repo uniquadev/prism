@@ -101,8 +101,8 @@ plugins:
             "3. Architecture": "3. Architettura"
             "3.1 Protocol": "3.1 Protocollo"
             "3.2 Pipeline": "3.2 Pipeline"
-            "3.4 Parameters": "3.4 Parametri"
-            "3.5 Interfaces": "3.5 Interfacce"
+            "3.3 Parameters": "3.3 Parametri"
+            "3.4 RTL Modules": "3.4 Moduli RTL"
             "4. Results": "4. Risultati"
             "4.1 Verification Evidence": "4.1 Evidenze di verifica"
             "5. Future Works": "5. Sviluppi futuri"
@@ -133,51 +133,26 @@ nav:
       - chapters/3-architecture/index.md
       - "3.1 Protocol": chapters/3-architecture/1.protocol.md
       - "3.2 Pipeline": chapters/3-architecture/2.pipeline.md
-      - "3.4 Parameters": chapters/3-architecture/4.parameters.md
-      - "3.5 Interfaces":
+      - "3.3 Parameters": chapters/3-architecture/4.parameters.md
+      - "3.4 RTL Modules":
         - chapters/3-architecture/4-interfaces/index.md
-        - "Shared contracts": chapters/3-architecture/4-interfaces/common-contracts.md
-        - "Top-level modules":
-          - "prism_switch_top": chapters/3-architecture/4-interfaces/top/prism_switch_top.md
-          - "prism_switch_core": chapters/3-architecture/4-interfaces/top/prism_switch_core.md
-        - "Main units":
-          - "prism_ingress_unit": chapters/3-architecture/4-interfaces/units/prism_ingress_unit.md
-          - "prism_forwarding_unit": chapters/3-architecture/4-interfaces/units/prism_forwarding_unit.md
-          - "prism_management_unit": chapters/3-architecture/4-interfaces/units/prism_management_unit.md
-          - "prism_collective_unit": chapters/3-architecture/4-interfaces/units/prism_collective_unit.md
-          - "prism_result_delivery_unit": chapters/3-architecture/4-interfaces/units/prism_result_delivery_unit.md
-          - "prism_reliability_unit": chapters/3-architecture/4-interfaces/units/prism_reliability_unit.md
-          - "prism_egress_unit": chapters/3-architecture/4-interfaces/units/prism_egress_unit.md
-        - "Stream components":
-          - "prism_packet_fifo": chapters/3-architecture/4-interfaces/components/stream/prism_packet_fifo.md
-          - "prism_packet_store": chapters/3-architecture/4-interfaces/components/stream/prism_packet_store.md
-          - "prism_header_parser": chapters/3-architecture/4-interfaces/components/stream/prism_header_parser.md
-          - "prism_packet_validator": chapters/3-architecture/4-interfaces/components/stream/prism_packet_validator.md
-          - "prism_admission_controller": chapters/3-architecture/4-interfaces/components/stream/prism_admission_controller.md
-          - "prism_voq_bank": chapters/3-architecture/4-interfaces/components/stream/prism_voq_bank.md
-          - "prism_packet_arbiter": chapters/3-architecture/4-interfaces/components/stream/prism_packet_arbiter.md
-          - "prism_stream_crossbar": chapters/3-architecture/4-interfaces/components/stream/prism_stream_crossbar.md
-          - "prism_egress_buffer": chapters/3-architecture/4-interfaces/components/stream/prism_egress_buffer.md
-          - "prism_packet_serializer": chapters/3-architecture/4-interfaces/components/stream/prism_packet_serializer.md
-        - "Collective components":
-          - "prism_collective_context_table": chapters/3-architecture/4-interfaces/components/collective/prism_collective_context_table.md
-          - "prism_contribution_tracker": chapters/3-architecture/4-interfaces/components/collective/prism_contribution_tracker.md
-          - "prism_data_depacketizer": chapters/3-architecture/4-interfaces/components/collective/prism_data_depacketizer.md
-          - "prism_accumulation_scheduler": chapters/3-architecture/4-interfaces/components/collective/prism_accumulation_scheduler.md
-          - "prism_accumulator_store": chapters/3-architecture/4-interfaces/components/collective/prism_accumulator_store.md
-          - "prism_output_range_tracker": chapters/3-architecture/4-interfaces/components/collective/prism_output_range_tracker.md
-          - "prism_output_packetizer": chapters/3-architecture/4-interfaces/components/collective/prism_output_packetizer.md
-          - "prism_result_replicator": chapters/3-architecture/4-interfaces/components/collective/prism_result_replicator.md
-        - "Reliability components":
-          - "prism_progress_engine": chapters/3-architecture/4-interfaces/components/reliability/prism_progress_engine.md
-          - "prism_replay_cache": chapters/3-architecture/4-interfaces/components/reliability/prism_replay_cache.md
-          - "prism_retry_timer": chapters/3-architecture/4-interfaces/components/reliability/prism_retry_timer.md
-        - "Arithmetic components":
-          - "prism_fp32_input_converter": chapters/3-architecture/4-interfaces/components/arithmetic/prism_fp32_input_converter.md
-          - "prism_accumulator_backend_dispatcher": chapters/3-architecture/4-interfaces/components/arithmetic/prism_accumulator_backend_dispatcher.md
-          - "prism_fp32_alu": chapters/3-architecture/4-interfaces/components/arithmetic/prism_fp32_alu.md
-          - "prism_fp32_alu_array": chapters/3-architecture/4-interfaces/components/arithmetic/prism_fp32_alu_array.md
-          - "prism_fp32_output_converter": chapters/3-architecture/4-interfaces/components/arithmetic/prism_fp32_output_converter.md
+        - "Current shared contracts": chapters/3-architecture/4-interfaces/common-contracts.md
+        - "Integration":
+          - "OpenNIC 250 MHz adapter": chapters/3-architecture/4-interfaces/top/prism_open_nic_250mhz.md
+        - "Core":
+          - "Collective core": chapters/3-architecture/4-interfaces/core/prism_collective_core.md
+        - "Ingress":
+          - "Ingress port": chapters/3-architecture/4-interfaces/ingress/prism_ingress_port.md
+        - "Control":
+          - "Control reassembler": chapters/3-architecture/4-interfaces/control/prism_control_reassembler.md
+          - "Control executor": chapters/3-architecture/4-interfaces/control/prism_control_executor.md
+        - "Collective datapath":
+          - "Data depacketizer": chapters/3-architecture/4-interfaces/collective/prism_data_depacketizer.md
+          - "Input conversion stage": chapters/3-architecture/4-interfaces/conversion/prism_input_conversion_stage.md
+          - "Range scheduler": chapters/3-architecture/4-interfaces/collective/prism_range_scheduler.md
+          - "Result chunk store": chapters/3-architecture/4-interfaces/collective/prism_result_chunk_store.md
+          - "Result router": chapters/3-architecture/4-interfaces/collective/prism_result_router.md
+          - "Result packetizer": chapters/3-architecture/4-interfaces/egress/prism_result_packetizer.md
   - "4. Results":
       - chapters/4-results/index.md
       - "4.1 Verification Evidence": chapters/4-results/verification.md

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from enum import IntEnum, IntFlag
 
-
 VERSION_MAJOR = 1
 VERSION_MINOR = 0
 ETHERTYPE = 0x88B5
@@ -116,7 +115,7 @@ class Status(IntEnum):
     NO_REPLAY_BUFFER = 0x15
     NO_ROUTE_RESOURCE = 0x16
     NO_REPLICATION_RESOURCE = 0x17
-    UNSUPPORTED_ARITHMETIC_TUPLE = 0x18
+    UNSUPPORTED_ARITHMETIC_CONFIGURATION = 0x18
     BAD_PAYLOAD_LENGTH = 0x19
     OUT_OF_WINDOW = 0x1A
     RETRY = 0x1B
@@ -141,6 +140,9 @@ class DataFlag(IntFlag):
     RETRANSMIT = 0x01
     ACK_REQUIRED = 0x02
     LAST_CHUNK = 0x04
+    # Approved laboratory extension. Protocol 1.0 receivers without this
+    # extension continue to reject the formerly reserved bit.
+    ACCUMULATION_INEXACT = 0x08
 
 
 class ProgressFlag(IntFlag):
@@ -246,7 +248,7 @@ PARTIAL_BYTES_PER_ELEMENT: dict[PartialWireFormat, int] = {
 
 class AccumulatorProfile(IntEnum):
     INVALID = 0x00
-    FP32 = 0x01
+    FP32_ARRIVAL = 0x01
     FP32_ORDERED = 0x02
     KULISCH_FP32 = 0x03
 
@@ -340,14 +342,17 @@ class CapabilityKey(IntEnum):
     MAX_SELECTIVE_ACK_WINDOW = 0x0011
     SUPPORTED_COLLECTIVE_SEMANTICS = 0x0012
     SUPPORTED_REDUCTION_OPERATORS = 0x0013
-    SUPPORTED_ARITHMETIC_TUPLE = 0x0014
-    MTU_BYTES = 0x0015
-    MAX_PRISM_PAYLOAD_BYTES = 0x0016
-    SUPPORTED_SECURITY_PROFILES = 0x0017
-    SUPPORTED_RELIABILITY_FEATURES = 0x0018
-    REPLAY_CACHE_DEPTH = 0x0019
-    REPLAY_CACHE_RETENTION_MS = 0x001A
-    SUPPORTED_ACCUMULATOR_PROFILE = 0x001B
+    SUPPORTED_INPUT_FORMATS = 0x0014
+    SUPPORTED_ACCUMULATOR_PROFILES = 0x0015
+    SUPPORTED_PARTIAL_FORMATS = 0x0016
+    SUPPORTED_OUTPUT_FORMATS = 0x0017
+    MTU_BYTES = 0x0018
+    MAX_PRISM_PAYLOAD_BYTES = 0x0019
+    SUPPORTED_SECURITY_PROFILES = 0x001A
+    SUPPORTED_RELIABILITY_FEATURES = 0x001B
+    REPLAY_CACHE_DEPTH = 0x001C
+    REPLAY_CACHE_RETENTION_MS = 0x001D
+    ACCUMULATOR_PROFILE_CAPABILITY = 0x001E
 
 
 class ResourceKey(IntEnum):
@@ -389,7 +394,7 @@ REPEATABLE_TLVS = frozenset(
 )
 
 
-class TlvSchema(tuple):
+class TlvSchema(tuple[frozenset[TlvType], frozenset[TlvType], frozenset[TlvType]]):
     """Tuple-like schema: mandatory, optional, repeatable TLV type sets."""
 
     __slots__ = ()
@@ -399,8 +404,11 @@ class TlvSchema(tuple):
         mandatory: set[TlvType] | frozenset[TlvType] = frozenset(),
         optional: set[TlvType] | frozenset[TlvType] = frozenset(),
         repeatable: set[TlvType] | frozenset[TlvType] = frozenset(),
-    ) -> "TlvSchema":
-        return tuple.__new__(cls, (frozenset(mandatory), frozenset(optional), frozenset(repeatable)))
+    ) -> TlvSchema:
+        return tuple.__new__(
+            cls,
+            (frozenset(mandatory), frozenset(optional), frozenset(repeatable)),
+        )
 
     @property
     def mandatory(self) -> frozenset[TlvType]:
@@ -418,10 +426,16 @@ class TlvSchema(tuple):
 COMMAND_TLV_SCHEMAS: dict[ControlCommand, TlvSchema] = {
     ControlCommand.CAPS_QUERY: TlvSchema(optional={TlvType.SECURITY_PROFILE}),
     ControlCommand.CAPS_RESPONSE: TlvSchema(
-        mandatory={TlvType.DEVICE_BOOT_ID, TlvType.PROTOCOL_VERSION_RANGE, TlvType.CAPABILITIES},
+        mandatory={
+            TlvType.DEVICE_BOOT_ID,
+            TlvType.PROTOCOL_VERSION_RANGE,
+            TlvType.CAPABILITIES,
+        },
         optional={TlvType.FEATURE_MASK, TlvType.SECURITY_PROFILE},
     ),
-    ControlCommand.RESOURCE_QUERY: TlvSchema(optional={TlvType.GROUP_HANDLE, TlvType.OPERATION_HANDLE}),
+    ControlCommand.RESOURCE_QUERY: TlvSchema(
+        optional={TlvType.GROUP_HANDLE, TlvType.OPERATION_HANDLE}
+    ),
     ControlCommand.RESOURCE_RESPONSE: TlvSchema(
         mandatory={TlvType.RESOURCE_SNAPSHOT_ID, TlvType.RESOURCE_SNAPSHOT},
         optional={TlvType.SESSION_USAGE},
@@ -431,7 +445,12 @@ COMMAND_TLV_SCHEMAS: dict[ControlCommand, TlvSchema] = {
         optional={TlvType.AUTH_DATA, TlvType.LEASE_MS},
     ),
     ControlCommand.SESSION_OPEN_RESPONSE: TlvSchema(
-        mandatory={TlvType.SESSION_COOKIE, TlvType.DEVICE_BOOT_ID, TlvType.LEASE_MS, TlvType.LEASE_GRACE_MS}
+        mandatory={
+            TlvType.SESSION_COOKIE,
+            TlvType.DEVICE_BOOT_ID,
+            TlvType.LEASE_MS,
+            TlvType.LEASE_GRACE_MS,
+        }
     ),
     ControlCommand.SESSION_RENEW: TlvSchema(optional={TlvType.LEASE_MS, TlvType.AUTH_DATA}),
     ControlCommand.SESSION_RENEW_RESPONSE: TlvSchema(mandatory={TlvType.LEASE_MS}),
@@ -446,11 +465,15 @@ COMMAND_TLV_SCHEMAS: dict[ControlCommand, TlvSchema] = {
         mandatory={TlvType.GROUP_HANDLE, TlvType.RESOURCE_RESERVATION}
     ),
     ControlCommand.GROUP_COMMIT: TlvSchema(mandatory={TlvType.GROUP_HANDLE}),
-    ControlCommand.GROUP_COMMIT_RESPONSE: TlvSchema(mandatory={TlvType.GROUP_HANDLE, TlvType.GROUP_STATUS}),
+    ControlCommand.GROUP_COMMIT_RESPONSE: TlvSchema(
+        mandatory={TlvType.GROUP_HANDLE, TlvType.GROUP_STATUS}
+    ),
     ControlCommand.GROUP_ABORT: TlvSchema(mandatory={TlvType.GROUP_HANDLE}),
     ControlCommand.GROUP_ABORT_RESPONSE: TlvSchema(optional={TlvType.RELEASED_RESOURCES}),
     ControlCommand.GROUP_STATUS: TlvSchema(mandatory={TlvType.GROUP_HANDLE}),
-    ControlCommand.GROUP_STATUS_RESPONSE: TlvSchema(mandatory={TlvType.GROUP_HANDLE, TlvType.GROUP_STATUS}),
+    ControlCommand.GROUP_STATUS_RESPONSE: TlvSchema(
+        mandatory={TlvType.GROUP_HANDLE, TlvType.GROUP_STATUS}
+    ),
     ControlCommand.GROUP_DESTROY: TlvSchema(mandatory={TlvType.GROUP_HANDLE}),
     ControlCommand.GROUP_DESTROY_RESPONSE: TlvSchema(
         mandatory={TlvType.GROUP_HANDLE}, optional={TlvType.RELEASED_RESOURCES}

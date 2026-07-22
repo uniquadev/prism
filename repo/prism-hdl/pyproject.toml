@@ -1,0 +1,33 @@
+[project]
+name = "prism-hdl-verification"
+version = "1.0.0"
+description = "Cocotb and Verilator verification for PRISM HDL"
+license = "Apache-2.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "cocotb==2.0.1",
+    "prism-ccl",
+]
+
+[dependency-groups]
+dev = [
+    "mypy==1.17.1",
+    "pytest==8.4.1",
+    "ruff==0.12.11",
+    "scapy==2.7.0",
+]
+
+[tool.uv.sources]
+prism-ccl = { path = "../prism-ccl", editable = true }
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+mypy_path = ["verification", "../prism-ccl/src"]

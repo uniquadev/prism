@@ -1,255 +1,146 @@
 # Riproducibilità in virgola mobile
 
-La riproducibilità in virgola mobile è una proprietà di correttezza
-dell'offload delle operazioni collettive, non soltanto un dettaglio di analisi
-numerica. In una collettiva in-network, l'ordine effettivo di riduzione può
-dipendere dal tempo di arrivo dei pacchetti, dall'arbitraggio delle VOQ, dalla
-backpressure, dallo scheduling egress, dalla forma dell'albero e dal
-posizionamento dei rank sulle porte. Questo è un problema per l'addizione in
-virgola mobile in stile IEEE: ogni operazione viene arrotondata e l'addizione non
-è quindi associativa.
+L'addizione floating-point arrotonda dopo ogni operazione e non è associativa.
+Ordini di arrivo diversi possono quindi produrre bit diversi. PRISM confronta
+tre strategie per misurare il compromesso tra costo hardware, throughput e
+riproducibilità.
 
-PRISM studia il problema al confine con l'elaborazione dei pacchetti.
-L'obiettivo non è rendere deterministica, da solo, un'intera applicazione
-distribuita. Computazione locale, partizionamento dei tensori, scelte del
-compilatore, kernel GPU e frammenti di riduzione lato host possono ancora
-introdurre non determinismo prima che i pacchetti raggiungano lo switch. La
-domanda più circoscritta è:
+## Concetti e profili
 
-!!! question "Domanda sulla riproducibilità di PRISM"
+| Termine | Significato |
+|---|---|
+| Elemento | Un numero del vettore, per esempio `a[7]` |
+| Lane | Una posizione di calcolo parallela |
+| Tile | Un blocco di elementi consecutivi con maschera e metadati |
+| Range | Le posizioni globali coperte dalla tile |
+| Accumulator bank | Stato e percorso di calcolo indipendenti per più range |
 
-    Data la stessa identità di Collective Operation con lo stesso descrittore
-    aritmetico, gli stessi contributi dei rank e la stessa politica per le eccezioni, può un datapath
-    RTL simile a quello di uno switch produrre lo stesso pattern di bit finale
-    in virgola mobile indipendentemente dal timing dei pacchetti e dall'ordine
-    di arbitraggio?
+Con 16 lane, le tile `[a0,...,a15]` e `[b0,...,b15]` vengono combinate in
+parallelo: la lane \(i\) calcola la posizione \(i\).
 
-La proprietà è rilevante per debugging, regression test, validazione numerica e
-checkpoint/restart: lo stesso job può conservare rank e input ma attraversare
-nodi, porte leaf o alberi di aggregazione differenti.
+| Profilo | Regola | Proprietà |
+|---|---|---|
+| `FP32_ARRIVAL` | Applica ogni contributo all'arrivo | Streaming, ma dipendente dall'ordine |
+| `FP32_ORDERED` | Applica Contributor ID crescenti | Riproducibile, con reorder buffer |
+| `KULISCH_FP32` | Deposita esattamente e arrotonda alla fine | Streaming e indipendente dall'ordine se la larghezza basta |
 
-## Strategie candidate
+Qui **streaming** significa che ogni contributo può essere usato subito.
+`FP32_ORDERED` può usare soltanto il prossimo Contributor ID e conserva quelli
+arrivati in anticipo. Nel prototipo a due rank conserva la coppia; con più rank
+l'RTL corrente aspetta tutti i contributi del range e poi li ripiega in ordine.
+Quest'ultimo comportamento è corretto, ma batch.
 
-PRISM tratta la riproducibilità come uno spazio di progetto, non come
-un'unica scelta aritmetica codificata rigidamente.
+La garanzia Kulisch è locale al nodo. Un parziale serializzato in FP32 introduce
+un arrotondamento; una riduzione multi-switch esatta richiederebbe un formato
+parziale lossless, non ancora assegnato dal protocollo.
 
-| Strategia | Idea per il datapath | Garanzia di riproducibilità | Costo principale |
-|---|---|---|---|
-| **FP32** | Accumula gli operandi ammissibili in ordine di arrivo. | Nessuna oltre un determinato ordine di esecuzione. | Stato minimo e scheduling più semplice. |
-| **FP32_ORDERED** | Per ogni tile globale applica il successivo Contributor ID locale crescente appena disponibile. | Riproducibilità bitwise per gli stessi contributi e lo stesso ordine. | Stato d'ordine per range e attesa del successivo contributore mancante. |
-| **KULISCH_FP32** | Mappa ogni input finito in una rappresentazione fixed-point esatta, seleziona la minima larghezza disponibile adatta al formato e al numero di termini e arrotonda una sola volta alla fine. | Somma finita esatta e indipendente dall'ordine prima dell'arrotondamento finale. | Stato dell'accumulatore ampio, banking, gestione dei riporti, normalizzazione finale e politica delle eccezioni. |
+## Parallelismo per 100 Gbit/s
 
-
-```mermaid
-flowchart LR
-    S{Profilo accumulatore}
-
-    S -->|FP32| B[Somma FP32 in ordine di arrivo]
-    B --> O1[Veloce ma dipendente dall'ordine]
-
-    S -->|FP32_ORDERED| C[Attesa del solo Contributor ID successivo]
-    C --> D[Fold FP32 streaming per Contributor ID crescente]
-    D --> O2[Bitwise stabile per un ordine logico fisso]
-
-    S -->|KULISCH_FP32| E[Decodifica segno, esponente e significando]
-    E --> F[Rappresentazione fixed-point esatta]
-    F --> G[Normalizzazione e singolo arrotondamento]
-    G --> O3[Somma finita indipendente dall'ordine]
-```
-
-La distinzione fondamentale è che **lo scheduling deterministico fissa
-l'ordine**, mentre un **superaccumulatore elimina l'ordine come variabile
-numerica**. Il primo approccio è più economico e costituisce un riferimento
-utile. Il secondo è più costoso, ma corrisponde meglio alla semantica attesa da
-una riduzione collettiva indipendente dall'ordine.
-
-!!! warning "Esattezza locale e globale"
-
-    La garanzia vale per gli operandi combinati da un singolo accumulatore. In
-    un albero multi-livello, serializzare un parziale esatto in FP32 arrotonda a
-    quell'hop. L'esattezza globale indipendente dall'albero richiede una
-    rappresentazione lossless dello stato parziale. Protocol 1.0 assegna la
-    famiglia di profili `KULISCH_FP32`, ma non ancora il relativo formato wire
-    lossless per i parziali.
-
-## Perché sperimentare ora con i superaccumulatori?
-
-Tre sviluppi rendono oggi significativa questa domanda:
-
-- **INC nei sistemi reali.** SHARP ha portato l'offload delle collettive nei
-  fabric HPC e AI di produzione[^sharp-overview][^sharp-blog]; SwitchML ha
-  mostrato il beneficio dell'aggregazione in-network per l'addestramento
-  distribuito[^switchml].
-- **Precisione mista.** Formati ridotti quali FP8 E4M3 ed E5M2 riducono traffico
-  e costo computazionale, ma richiedono spesso un'accumulazione più ampia o più
-  stabile[^nvidia-fp8]. La semantica dell'accumulatore diventa quindi parte
-  dell'accuratezza del sistema.
-- **Limiti dei datapath programmabili.** Le pipeline nate per il packet
-  processing non offrono naturalmente aritmetica floating-point applicativa;
-  FPISA documenta il costo dei workaround necessari[^fpisa]. Un prototipo FPGA
-  dedicato permette invece di misurare direttamente questa funzione.
-
-La domanda hardware è dunque quantitativa: quale frontiera di Pareto emerge tra
-un percorso `FP32_ORDERED` e un superaccumulatore, considerando area,
-BRAM/URAM, banking, riporti, initiation interval, Fmax, backpressure e latenza
-dell'arrotondamento finale?
-
-## Semantica del superaccumulatore
-
-Per un input binario finito in virgola mobile, il riduttore decodifica:
+Con \(b_d\) bit per elemento, \(L_d\) lane, frequenza \(f\) e initiation
+interval \(II_d\):
 
 \[
-x = (-1)^s M 2^{e-(p-1)}
+T_d=\frac{L_d b_d f}{II_d},
+\qquad
+L_{min}(d)=\left\lceil\frac{T_{goal}II_d}{b_d f}\right\rceil.
 \]
 
-dove \(p\) è la precisione del significando, incluso il bit implicito, \(M\) è
-il significando intero ed \(e\) è l'esponente unbiased. Anche i valori
-subnormali sono multipli esatti della più piccola unità subnormale:
+A 250 MHz, con \(II=1\) e target 100 Gbit/s:
+
+| Datatype | Lane minime | Lane per 512 bit/ciclo | Prototipo con 16 lane |
+|---|---:|---:|---:|
+| FP32 | 13 | 16 | 128 Gbit/s |
+| FP16 | 25 | 32 | 64 Gbit/s |
+| BF16 | 25 | 32 | 64 Gbit/s |
+| INT8 | 50 | 64 | 32 Gbit/s |
+
+Oggi `LANES=16` indica sia gli elementi della tile sia il parallelismo fisico.
+FP16, BF16 e INT8 usano gli stessi 16 contenitori da 32 bit, quindi non
+raddoppiano automaticamente le lane.
+
+Una parametrizzazione più pulita separerebbe:
+
+- `TILE_ELEMENTS=16`, granularità logica del range;
+- issue slice FP32, numero di tile FP32 per ciclo;
+- issue slice Kulisch per ogni larghezza compilata.
+
+Un beat da 512 bit contiene una tile FP32, due tile FP16/BF16 o quattro tile
+INT8. Processarlo in un ciclo richiede quindi molteplicità 1, 2 o 4.
+
+Con \(N\) contributor e \(L_d\) risultati per ciclo servono \(NL_d\) operandi
+per ciclo. Una riduzione binaria richiede capacità equivalente a:
 
 \[
-2^{E_{\min}-(p-1)}.
+A_{binary}=(N-1)L_d.
 \]
 
-Un accumulatore per somme scalari in stile Kulisch sceglie questa unità come bit
-fixed-point meno significativo. Ogni operando viene allineato alla posizione
-corrispondente; la rappresentazione intermedia intera rende la somma associativa
-e commutativa entro la capacità dell'accumulatore. Il risultato floating-point
-si ottiene normalizzando la somma esatta e arrotondandola una sola volta.
+Kulisch deve invece accettare \(NL_d\) deposit per ciclo. ALLREDUCE replica il
+risultato senza ripetere la riduzione.
 
-Si ottiene così una separazione netta tra timing di rete e semantica aritmetica:
+Anche l'uscita può limitare il sistema: 64 input INT8 convertiti in FP32
+producono \(64\cdot32=2048\) bit. Una porta da 512 bit richiede quattro cicli o
+backpressure.
+
+## Accumulazione Kulisch
+
+Un valore finito può essere scritto come:
 
 \[
-\text{ordine dei pacchetti} \;\not\Rightarrow\; \text{ordine delle operazioni floating-point}.
+x=(-1)^sM2^{e-(p-1)}.
 \]
 
-I valori speciali devono essere gestiti fuori dal datapath fixed-point. NaN,
-infiniti, zeri con segno, operazioni non valide e overflow del formato finale
-devono essere tracciati mediante flag sideband deterministici e una politica di
-canonicalizzazione documentata. Il superaccumulatore finito deve ricevere
-soltanto contributi numerici finiti.
+Kulisch allinea \(M\) in un accumulatore fixed-point, somma senza arrotondamenti
+intermedi e converte in floating point una sola volta alla fine. NaN, infiniti
+e zeri con segno sono tracciati separatamente.
 
-## Dimensionamento dell'accumulatore per riduzioni scalari { #accumulator-sizing-for-scalar-reductions }
+Nel RTL corrente FP32 e Kulisch usano le stesse 16 lane. Le larghezze 64, 288 e
+320 selezionano la capacità numerica, ma lo scheduler conserva ogni lane usando
+lo stato fisico massimo `WIDTH_2=320`. Non sono tre memorie di accumulatori
+indipendenti.
 
-La larghezza dell'accumulatore dipende dall'operazione. Per le riduzioni scalari
-di PRISM,
+Il costo del solo stato numerico è circa:
 
 \[
-\sum_{i=1}^{R} x_i,
+S_{Kulisch}\approx B R_b L_K W_K,
 \]
 
-il bound rilevante **non** è quello del prodotto scalare. Siano:
+con \(B\) bank, \(R_b\) range per bank, \(L_K\) lane e \(W_K\) bit per lane.
+Per questo il parallelismo Kulisch deve essere configurabile separatamente da
+quello FP32.
 
-- \(R\) il numero massimo di partecipanti che contribuiscono a un elemento di riduzione;
-- \(p\) la precisione del significando, incluso il bit implicito;
-- \(E_{\min}\) l'esponente minimo dei numeri normalizzati;
-- \(E_{\max}\) l'esponente massimo dei numeri normalizzati.
+## Larghezza dell'accumulatore
 
-Per una somma scalare finita esatta che include i subnormali:
+Per una somma scalare di \(R\) valori, inclusi i subnormali:
 
 \[
-W_{\mathrm{mag}} = E_{\max} - E_{\min} + p
+W_{signed}=E_{max}-E_{min}+p+\lceil\log_2R\rceil+1.
 \]
 
-e la larghezza dell'accumulatore con segno in complemento a due è:
+| Input | Larghezza richiesta |
+|---|---:|
+| INT8 | \(8+\lceil\log_2R\rceil\) |
+| FP16 | \(41+\lceil\log_2R\rceil\) |
+| BF16 | \(262+\lceil\log_2R\rceil\) |
+| FP32 | \(278+\lceil\log_2R\rceil\) |
 
-\[
-W_{\mathrm{signed}} =
-W_{\mathrm{mag}} + \lceil \log_2 R \rceil + 1.
-\]
+Con \(R=256\), FP32 richiede \(278+8=286\) bit per lane. Il backend da 288 bit
+è quindi sufficiente. Se nessuna larghezza compilata basta, PRISM usa la più
+grande, satura e propaga `ACCUMULATION_INEXACT`.
 
-Il termine \(+\lceil \log_2 R\rceil\) è il margine per il riporto necessario a
-sommare \(R\) operandi dello stesso segno e di magnitudine massima. Il \(+1\)
-finale è il bit di segno.
+Questa formula riguarda \(\sum_i x_i\). Un prodotto scalare
+\(\sum_i a_i b_i\) richiede un accumulatore più largo ed è fuori ambito.
 
-| Formato di input | \(p\) | \(E_{\min}\) | \(E_{\max}\) | Bit esatti della magnitudine scalare | Accumulatore con segno per \(R\) partecipanti |
-|---|---:|---:|---:|---:|---:|
-| FP8 E4M3FN | 4 | -6 | 8 | 18 | \(19+\lceil\log_2 R\rceil\) |
-| FP8 E4M3FNUZ | 4 | -7 | 7 | 18 | \(19+\lceil\log_2 R\rceil\) |
-| FP8 E5M2 | 3 | -14 | 15 | 32 | \(33+\lceil\log_2 R\rceil\) |
-| FP8 E5M2FNUZ | 3 | -15 | 15 | 33 | \(34+\lceil\log_2 R\rceil\) |
-| IEEE FP16 / binary16 | 11 | -14 | 15 | 40 | \(41+\lceil\log_2 R\rceil\) |
-| BF16 | 8 | -126 | 127 | 261 | \(262+\lceil\log_2 R\rceil\) |
-| IEEE FP32 / binary32 | 24 | -126 | 127 | 277 | \(278+\lceil\log_2 R\rceil\) |
+SHARP e SwitchML mostrano l'interesse per le riduzioni in-network
+[^sharp-overview][^switchml]; FPISA evidenzia il costo del floating point nei
+datapath programmabili[^fpisa]. PRISM usa un prototipo FPGA per misurare questo
+compromesso, senza assumere che Kulisch sia sempre la scelta migliore.
 
-Le righe FP8 estendono l'analisi di dimensionamento, ma non implicano il loro
-supporto sul wire in Protocol 1.0.
-
-Pertanto, un singolo accumulatore per riduzioni scalari che copra FP8, FP16,
-BF16 e FP32 è dominato dall'intervallo degli esponenti FP32/BF16:
-
-\[
-\boxed{
-W_{\mathrm{FP32\ scalar\ reduce}} =
-278+\lceil\log_2 R\rceil
-}
-\]
-
-Per esempio, con \(R=256\) rank, un accumulatore esatto con segno per somme scalari
-FP32 richiede:
-
-\[
-278+\lceil\log_2 256\rceil = 286
-\]
-
-bit per lane di riduzione, prima di aggiungere metadati implementativi come bit
-di validità, flag di eccezione, tag dell'operazione, bitmap dei contributi o stato di
-selezione delle banche.
-
-!!! warning "Riduzione scalare, non prodotto scalare"
-
-    PRISM somma valori floating-point già calcolati. Il bound più ampio di un
-    accumulatore Kulisch per \(\sum_i a_i b_i\), che deve rappresentare
-    esattamente anche i prodotti, riguarda un motore MAC ed è fuori ambito.
-
-## Perché non preservare soltanto l'ordine FP32?
-
-Un riduttore FP32 deterministico arrotonda dopo ogni addizione: rende il
-risultato ripetibile, ma incorpora nell'algoritmo l'ordine scelto. Variazioni nel
-numero di rank, nel chunking o nelle somme parziali possono ancora cambiare il
-risultato. Il superaccumulatore, invece, deposita esattamente gli operandi finiti
-e arrotonda una sola volta.
-
-PRISM confronta quindi `FP32`, il riferimento minimo in ordine di arrivo;
-`FP32_ORDERED`, che applica i Contributor ID in ordine crescente; e
-`KULISCH_FP32`, la famiglia di accumulatori esatti per input fino a FP32. Ogni
-profilo definisce sia la rappresentazione sia la regola di aggiornamento.
-`FP32_ORDERED` attende solo il contributore successivo per ciascun range, non
-una barriera wait-all sull'intero chunk. `KULISCH_FP32` deriva la larghezza da
-Reduction Operator, formato di input e Maximum Reduction Terms, quindi sceglie
-la minima configurazione compilata sufficiente. Protocol 1.0 usa il bound della
-somma scalare; un futuro prodotto scalare richiede il bound più ampio dei
-prodotti.
-
-## Risultato atteso
-
-Il contributo atteso è una misura implementativa del compromesso:
-
-\[
-\text{riproducibilità} \quad \leftrightarrow \quad
-\text{area} + \text{stato} + \text{latenza} + \text{pressione sul timing}.
-\]
-
-La domanda non è quindi se il superaccumulatore sia sempre preferibile, ma a
-quali condizioni possa essere integrato senza compromettere il funzionamento a
-line rate.
-
-[^sharp-overview]: Documentazione NVIDIA, *Scalable Hierarchical Aggregation and
-    Reduction Protocol (SHARP)*. SHARP viene descritto come offload delle
-    operazioni collettive MPI e di machine learning da CPU e GPU alla rete.
-    https://docs.nvidia.com/networking/display/sharpv300
-
-[^sharp-blog]: NVIDIA Developer Blog, *Advancing Performance with NVIDIA SHARP
-    In-Network Computing*. L'articolo descrive SHARP come in-network computing
-    negli ASIC degli switch per la comunicazione collettiva.
-    https://developer.nvidia.com/blog/advancing-performance-with-nvidia-sharp-in-network-computing/
+[^sharp-overview]: NVIDIA, *Scalable Hierarchical Aggregation and Reduction
+    Protocol (SHARP)*. https://docs.nvidia.com/networking/display/sharpv300
 
 [^switchml]: Sapio et al., *Scaling Distributed Machine Learning with In-Network
     Aggregation*, NSDI 2021.
     https://www.usenix.org/conference/nsdi21/presentation/sapio
-
-[^nvidia-fp8]: Documentazione NVIDIA Transformer Engine, *Using FP8 and FP4 with
-    Transformer Engine*.
-    https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/examples/fp8_primer.html
 
 [^fpisa]: Yuan et al., *Unlocking the Power of Inline Floating-Point Operations
     on Programmable Switches*, NSDI 2022.
