@@ -1,0 +1,17 @@
+# Python caches, environments, and packages
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.uv-cache/
+.venv/
+venv/
+build/
+dist/
+wheels/
+*.egg-info/

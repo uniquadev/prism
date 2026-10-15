@@ -1,0 +1,8 @@
+# Each integration test regenerates its own capture directory.
+traces/*
+!traces/.gitkeep
+
+# Historical snapshots are local-only.
+archive/
+rtl_baseline_ccl/
+tests/rtl_baseline/

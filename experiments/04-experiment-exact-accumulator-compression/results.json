@@ -1,0 +1,413 @@
+{
+  "protocol": {
+    "mtu": 1500,
+    "frame_overhead": 56,
+    "numbergroup_descriptor": 4,
+    "padding": "4-byte group alignment",
+    "kulisch_bits": 320,
+    "kulisch_scale": -149,
+    "candidate_scope": "each current-AUTO Kulisch group",
+    "uniform_compression_scope": "each uniform-Kulisch frame group before compression; at most 35 values",
+    "proposed_block_bits": 8,
+    "ranks": 4
+  },
+  "proposed_numbergroup": {
+    "status": "software-only; current CCL and RTL require descriptor byte 1 to be zero",
+    "format": "KULISCH",
+    "encoding_field": "NumberGroup descriptor byte 1 (currently reserved zero)",
+    "encoding_ids": {
+      "RAW": 0,
+      "RANGE": 1,
+      "INDEX": 2,
+      "MASK": 3
+    },
+    "selection_scope": "each current-AUTO Kulisch NumberGroup"
+  },
+  "scope": "local FP32 kernel emulation; exact Reduce of four rank partials; not hardware/MPI traffic",
+  "compressed_uniform_baseline": {
+    "native_format_selection": false,
+    "source_grouping": "one homogeneous KULISCH group per original MTU-limited frame",
+    "max_values_per_source_group": 35,
+    "codecs": [
+      "RAW",
+      "RANGE",
+      "INDEX",
+      "MASK"
+    ],
+    "selection": "smallest padded group, identical to AUTO plus compression",
+    "packetization": "repack compressed groups in order; retain descriptors and padding",
+    "limitation": "no mixed native formats; not a descriptor-free protocol or globally optimized compressed packetizer"
+  },
+  "sources": {
+    "cavity01.tar.gz": {
+      "url": "https://sparse.tamu.edu/MM/DRIVCAV/cavity01.tar.gz",
+      "sha256": "B1481371E07E7997910216F3C395BB7898F96243DF8F16A5A46174410B19F41D"
+    },
+    "bcsstk16": {
+      "url": "https://raw.githubusercontent.com/DrTimothyAldenDavis/SuiteSparse/e202a5bcef55f5a780c26830ebd6ff13af193baf/CXSparse/Matrix/bcsstk16",
+      "sha256": "44FF2C8750B6134A6A22874B0DDE9F37463FAAD954A662E047B9E6ED0F21EDB5"
+    },
+    "pythia-14m-model.safetensors": {
+      "url": "https://huggingface.co/EleutherAI/pythia-14m/resolve/cf967c0a9a04383db6f7b1108d86b2962634b4ac/model.safetensors",
+      "sha256": "116A02532DB461F91386A5B20F942FF2C8D4DE7341E21B55CAAFC3D7B25F49A1"
+    }
+  },
+  "cases": [
+    {
+      "label": "Constructed / 1 + 2^-24",
+      "metadata": {
+        "outputs": 726,
+        "kernel": "constructed exactness stress case",
+        "input": "1 and smallest positive FP16 subnormal; one DATA packet per rank"
+      },
+      "n": 726,
+      "chunks": [
+        726
+      ],
+      "four_rank_fp32_partials": true,
+      "exact_not_fp32": 726,
+      "auto_formats": {
+        "INT8": 0,
+        "FP16": 0,
+        "BF16": 0,
+        "FP32": 0,
+        "KULISCH": 726
+      },
+      "selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 0,
+        "INDEX": 0,
+        "MASK": 21
+      },
+      "uniform_selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 0,
+        "INDEX": 0,
+        "MASK": 21
+      },
+      "source_group_counts": {
+        "uniform_kulisch": 21,
+        "auto": 21
+      },
+      "uniform_kulisch": {
+        "frame_bytes": 31048,
+        "packets": 21
+      },
+      "compressed_uniform_kulisch": {
+        "frame_bytes": 1860,
+        "packets": 2
+      },
+      "auto": {
+        "frame_bytes": 31048,
+        "packets": 21
+      },
+      "compressed_exact": {
+        "frame_bytes": 1860,
+        "packets": 2
+      },
+      "fixed_fp32": {
+        "frame_bytes": 3024,
+        "packets": 2
+      },
+      "range_only": {
+        "frame_bytes": 4704,
+        "packets": 4
+      },
+      "indexed_only": {
+        "frame_bytes": 3904,
+        "packets": 3
+      },
+      "mask_only": {
+        "frame_bytes": 1860,
+        "packets": 2
+      }
+    },
+    {
+      "label": "CFD / cavity01",
+      "metadata": {
+        "matrix": "DRIVCAV/cavity01",
+        "outputs": 317,
+        "stored_entries": 7327,
+        "nonzeros": 7280,
+        "vector": "official cavity01_x.mtx",
+        "kernel": "FP32 SpMV"
+      },
+      "n": 317,
+      "chunks": [
+        317
+      ],
+      "four_rank_fp32_partials": true,
+      "exact_not_fp32": 103,
+      "auto_formats": {
+        "INT8": 0,
+        "FP16": 0,
+        "BF16": 4,
+        "FP32": 210,
+        "KULISCH": 103
+      },
+      "selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 41,
+        "INDEX": 2,
+        "MASK": 12
+      },
+      "uniform_selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 2,
+        "INDEX": 1,
+        "MASK": 7
+      },
+      "source_group_counts": {
+        "uniform_kulisch": 10,
+        "auto": 107
+      },
+      "uniform_kulisch": {
+        "frame_bytes": 13608,
+        "packets": 10
+      },
+      "compressed_uniform_kulisch": {
+        "frame_bytes": 1892,
+        "packets": 2
+      },
+      "auto": {
+        "frame_bytes": 5852,
+        "packets": 4
+      },
+      "compressed_exact": {
+        "frame_bytes": 2148,
+        "packets": 2
+      },
+      "fixed_fp32": {
+        "frame_bytes": 1328,
+        "packets": 1
+      },
+      "range_only": {
+        "frame_bytes": 2152,
+        "packets": 2
+      },
+      "indexed_only": {
+        "frame_bytes": 2524,
+        "packets": 2
+      },
+      "mask_only": {
+        "frame_bytes": 2328,
+        "packets": 2
+      }
+    },
+    {
+      "label": "HPC / bcsstk16",
+      "metadata": {
+        "matrix": "HB/bcsstk16",
+        "outputs": 4884,
+        "stored_entries": 147631,
+        "full_entries": 290378,
+        "vector": "benchmark x[j] = 1 (synthetic)",
+        "kernel": "FP32 symmetric SpMV"
+      },
+      "n": 4884,
+      "chunks": [
+        4096,
+        788
+      ],
+      "four_rank_fp32_partials": true,
+      "exact_not_fp32": 39,
+      "auto_formats": {
+        "INT8": 2146,
+        "FP16": 1213,
+        "BF16": 0,
+        "FP32": 1486,
+        "KULISCH": 39
+      },
+      "selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 19,
+        "INDEX": 0,
+        "MASK": 7
+      },
+      "uniform_selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 138,
+        "INDEX": 2,
+        "MASK": 1
+      },
+      "source_group_counts": {
+        "uniform_kulisch": 141,
+        "auto": 765
+      },
+      "uniform_kulisch": {
+        "frame_bytes": 208848,
+        "packets": 141
+      },
+      "compressed_uniform_kulisch": {
+        "frame_bytes": 21276,
+        "packets": 16
+      },
+      "auto": {
+        "frame_bytes": 16304,
+        "packets": 12
+      },
+      "compressed_exact": {
+        "frame_bytes": 14864,
+        "packets": 11
+      },
+      "fixed_fp32": {
+        "frame_bytes": 20436,
+        "packets": 15
+      },
+      "range_only": {
+        "frame_bytes": 14868,
+        "packets": 11
+      },
+      "indexed_only": {
+        "frame_bytes": 14996,
+        "packets": 11
+      },
+      "mask_only": {
+        "frame_bytes": 14940,
+        "packets": 11
+      }
+    },
+    {
+      "label": "LLM / QKV",
+      "metadata": {
+        "model": "EleutherAI/pythia-14m",
+        "outputs": 384,
+        "input": "embedding row for token ID 42",
+        "layer": "gpt_neox.layers.0.attention.query_key_value.weight",
+        "kernel": "FP32 matrix-vector projection of FP16 weights"
+      },
+      "n": 384,
+      "chunks": [
+        384
+      ],
+      "four_rank_fp32_partials": true,
+      "exact_not_fp32": 263,
+      "auto_formats": {
+        "INT8": 0,
+        "FP16": 0,
+        "BF16": 0,
+        "FP32": 121,
+        "KULISCH": 263
+      },
+      "selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 43,
+        "INDEX": 0,
+        "MASK": 44
+      },
+      "uniform_selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 0,
+        "INDEX": 0,
+        "MASK": 11
+      },
+      "source_group_counts": {
+        "uniform_kulisch": 11,
+        "auto": 167
+      },
+      "uniform_kulisch": {
+        "frame_bytes": 16416,
+        "packets": 11
+      },
+      "compressed_uniform_kulisch": {
+        "frame_bytes": 2040,
+        "packets": 2
+      },
+      "auto": {
+        "frame_bytes": 12600,
+        "packets": 9
+      },
+      "compressed_exact": {
+        "frame_bytes": 2888,
+        "packets": 2
+      },
+      "fixed_fp32": {
+        "frame_bytes": 1656,
+        "packets": 2
+      },
+      "range_only": {
+        "frame_bytes": 2968,
+        "packets": 2
+      },
+      "indexed_only": {
+        "frame_bytes": 3868,
+        "packets": 3
+      },
+      "mask_only": {
+        "frame_bytes": 3116,
+        "packets": 3
+      }
+    },
+    {
+      "label": "LLM / MLP",
+      "metadata": {
+        "model": "EleutherAI/pythia-14m",
+        "outputs": 512,
+        "input": "embedding row for token ID 42",
+        "layer": "gpt_neox.layers.0.mlp.dense_h_to_4h.weight",
+        "kernel": "FP32 matrix-vector projection of FP16 weights"
+      },
+      "n": 512,
+      "chunks": [
+        512
+      ],
+      "four_rank_fp32_partials": true,
+      "exact_not_fp32": 347,
+      "auto_formats": {
+        "INT8": 0,
+        "FP16": 0,
+        "BF16": 0,
+        "FP32": 165,
+        "KULISCH": 347
+      },
+      "selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 59,
+        "INDEX": 1,
+        "MASK": 53
+      },
+      "uniform_selected_encoding_groups": {
+        "RAW": 0,
+        "RANGE": 0,
+        "INDEX": 0,
+        "MASK": 15
+      },
+      "source_group_counts": {
+        "uniform_kulisch": 15,
+        "auto": 223
+      },
+      "uniform_kulisch": {
+        "frame_bytes": 21908,
+        "packets": 15
+      },
+      "compressed_uniform_kulisch": {
+        "frame_bytes": 2468,
+        "packets": 2
+      },
+      "auto": {
+        "frame_bytes": 16668,
+        "packets": 12
+      },
+      "compressed_exact": {
+        "frame_bytes": 3788,
+        "packets": 3
+      },
+      "fixed_fp32": {
+        "frame_bytes": 2168,
+        "packets": 2
+      },
+      "range_only": {
+        "frame_bytes": 3928,
+        "packets": 3
+      },
+      "indexed_only": {
+        "frame_bytes": 5112,
+        "packets": 4
+      },
+      "mask_only": {
+        "frame_bytes": 4028,
+        "packets": 3
+      }
+    }
+  ]
+}

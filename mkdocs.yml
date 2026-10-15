@@ -1,0 +1,217 @@
+site_name: PRISM
+site_description: Bachelor thesis documentation for primitive hardware for network computing.
+site_author: Lorenzo Cipolletti
+site_url: https://prism.uniqua.dev/
+copyright: Copyright &copy; 2026 Lorenzo Cipolletti
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: en
+  favicon: assets/images/favicon.svg
+  logo: assets/images/prism_icon.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.path
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - content.footnote.tooltips
+
+plugins:
+  - search:
+      lang: en
+      separator: '[\s\-\.]+'
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: it
+          name: Italiano
+          build: true
+          site_description: Documentazione della tesi su primitive hardware per il calcolo in rete.
+          theme:
+            language: it
+            palette:
+              - media: "(prefers-color-scheme: light)"
+                scheme: default
+                primary: black
+                accent: blue
+                toggle:
+                  icon: material/weather-night
+                  name: Passa alla modalità scura
+              - media: "(prefers-color-scheme: dark)"
+                scheme: slate
+                primary: black
+                accent: blue
+                toggle:
+                  icon: material/weather-sunny
+                  name: Passa alla modalità chiara
+          extra:
+            generator: false
+            social:
+              - icon: fontawesome/brands/github
+                link: https://github.com/uniquadev/prism
+                name: PRISM su GitHub
+          nav_translations:
+            "1. Introduction": "1. Introduzione"
+            "1.1 Floating-Point Reproducibility": "1.1 Riproducibilità in virgola mobile"
+            "2. Getting Started": "2. Per iniziare"
+            "2.1 CCL and Experiments": "2.1 CCL ed esperimenti"
+            "2.2 Wireshark Plugin": "2.2 Plugin Wireshark"
+            "2.3 Alveo U280": "2.3 Alveo U280"
+            "3. Architecture": "3. Architettura"
+            "3.1 Protocol": "3.1 Protocollo"
+            "3.2 Pipeline": "3.2 Pipeline"
+            "3.3 Parameters": "3.3 Parametri"
+            "3.4 RTL Modules": "3.4 Moduli RTL"
+            "3.4.1 Datapath contracts": "3.4.1 Contratti del datapath"
+            "3.4.2 Components": "3.4.2 Componenti"
+            "4. Results": "4. Risultati"
+            "4.1 Performance": "4.1 Prestazioni"
+            "4.2 Traffic": "4.2 Traffico"
+            "4.3 Resources": "4.3 Risorse"
+            "5. Future Works": "5. Sviluppi futuri"
+            "5.1 Hardware": "5.1 Hardware"
+            "5.2 Protocol": "5.2 Protocollo"
+            "5.3 Numerical Formats": "5.3 Formati numerici"
+            "5.4 Applications": "5.4 Applicazioni"
+  - autorefs
+  - git-revision-date-localized:
+      enable_creation_date: false
+      enable_git_follow: false
+      fallback_to_build_date: true
+      strict: false
+      type: date
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      effect: zoom
+      slide_effect: slide
+  - minify_html:
+      minify_css: true
+      minify_js: true
+
+nav:
+  - "1. Introduction":
+      - index.md
+      - "1.1 Floating-Point Reproducibility": chapters/1-introduction/reproducibility.md
+  - "2. Getting Started":
+      - chapters/2-getting-started/index.md
+      - "2.1 CCL and Experiments": chapters/2-getting-started/ccl-experiments.md
+      - "2.2 Wireshark Plugin": chapters/2-getting-started/wireshark.md
+      - "2.3 Alveo U280": chapters/2-getting-started/u280.md
+  - "3. Architecture":
+      - chapters/3-architecture/index.md
+      - "3.1 Protocol": chapters/3-architecture/1.protocol.md
+      - "3.2 Pipeline": chapters/3-architecture/2.pipeline.md
+      - "3.3 Parameters": chapters/3-architecture/4.parameters.md
+      - "3.4 RTL Modules":
+        - chapters/3-architecture/4-modules/index.md
+        - "3.4.1 Datapath contracts": chapters/3-architecture/4-modules/datapath-contracts.md
+        - "3.4.2 Components":
+          - "U280 board top": chapters/3-architecture/4-modules/components/prism_u280_top.md
+          - "Collective core": chapters/3-architecture/4-modules/components/prism_collective_core.md
+          - "SINGLE control plane": chapters/3-architecture/4-modules/components/prism_single_control_plane.md
+          - "SINGLE DATA receiver": chapters/3-architecture/4-modules/components/prism_single_data_receiver.md
+          - "SINGLE result egress": chapters/3-architecture/4-modules/components/prism_single_native_stream_egress.md
+          - "AUTO partial sender": chapters/3-architecture/4-modules/components/prism_numbergroup_auto_partial_sender.md
+  - "4. Results":
+      - chapters/4-results/index.md
+      - "4.1 Performance": chapters/4-results/performance.md
+      - "4.2 Traffic": chapters/4-results/traffic.md
+      - "4.3 Resources": chapters/4-results/resources.md
+  - "5. Future Works":
+    - chapters/5-future-works/index.md
+    - "5.1 Hardware": chapters/5-future-works/hardware.md
+    - "5.2 Protocol": chapters/5-future-works/protocol.md
+    - "5.3 Numerical Formats": chapters/5-future-works/numerics.md
+    - "5.4 Applications": chapters/5-future-works/applications.md
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.snippets:
+      auto_append:
+        - docs/includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid-source
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/uniquadev/prism
+      name: PRISM on GitHub
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js
+  - assets/javascripts/mermaid.js
+  - assets/javascripts/tables.js
+  - assets/javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js

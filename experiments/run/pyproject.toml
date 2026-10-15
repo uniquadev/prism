@@ -1,0 +1,21 @@
+[project]
+name = "prism-experiments"
+version = "0.1.0"
+license = "Apache-2.0"
+description = "Shared build and provenance tools for PRISM experiments"
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+[project.optional-dependencies]
+rtl = ["cocotb==2.0.1"]
+
+[build-system]
+requires = ["uv_build>=0.11.2,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

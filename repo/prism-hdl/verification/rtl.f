@@ -1,0 +1,17 @@
+verification/rtl/prism_sim_top.sv
+verification/rtl/prism_numbergroup_header_parser_harness.sv
+verification/rtl/prism_control_header_parser_harness.sv
+verification/rtl/prism_control_frame_validator_harness.sv
+verification/rtl/prism_control_stage_precheck_harness.sv
+verification/rtl/prism_numbergroup_frame_validator_harness.sv
+verification/rtl/prism_numbergroup_reader_harness.sv
+verification/rtl/prism_numbergroup_native_tile_harness.sv
+verification/rtl/prism_bank_result_hold.sv
+verification/rtl/prism_exact_result_tile_harness.sv
+verification/rtl/prism_exact_result_frame_harness.sv
+verification/rtl/prism_exact_kulisch_result_frame_harness.sv
+verification/rtl/prism_native_partial_tile_harness.sv
+verification/rtl/prism_kulisch_partial_tile_harness.sv
+verification/rtl/prism_numbergroup_mixed_tile_harness.sv
+verification/rtl/prism_numbergroup_auto_partial_harness.sv
+verification/rtl/prism_exact_auto_partial_stream_harness.sv

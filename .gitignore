@@ -1,0 +1,78 @@
+# Python caches and environments
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.uv-cache/
+.venv/
+venv/
+*.egg-info/
+
+# Generated documentation
+site/
+.mkdocs-serve.*.log
+.tmp-*
+
+# Build and simulator output
+build/
+sim_build/
+*.vcd
+*.fst
+*.vvp
+*.pb
+.Xil/
+xsim.dir/
+vivado*.jou
+vivado*.log
+retry_open_fs.log
+iter_*_CongestedCLBsAndNets.txt
+FinalUnmatchedCellsToUnplace.txt
+results.xml
+*.result.xml
+*.results.xml
+
+# Vivado projects, implementation runs, and programming images
+*.cache/
+*.gen/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.srcs/
+*.xpr
+*.xdef
+*.dcp
+*.rpt
+*.wdb
+*.bit
+*.ltx
+*.mcs
+*.prm
+*.xsa
+*.pdi
+*.hwh
+*.sysdef
+*.mmi
+*.bif
+*.bin
+*.lic
+
+# DUT-observed captures are regenerated per test.
+repo/prism-hdl/verification/traces/*
+!repo/prism-hdl/verification/traces/.gitkeep
+
+# Editors and local tooling
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating systems
+.DS_Store
+Thumbs.db

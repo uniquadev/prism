@@ -1,0 +1,123 @@
+{
+  "backend": "cocotb_verilator",
+  "cases": [
+    {
+      "accumulator": "KULISCH_FIXED",
+      "input_format": "INT8",
+      "length": 64,
+      "workload": "ordinary"
+    },
+    {
+      "accumulator": "KULISCH_FIXED",
+      "input_format": "FP16",
+      "length": 64,
+      "workload": "ordinary"
+    },
+    {
+      "accumulator": "KULISCH_FIXED",
+      "input_format": "BF16",
+      "length": 64,
+      "workload": "ordinary"
+    },
+    {
+      "accumulator": "KULISCH_FIXED",
+      "input_format": "FP32",
+      "length": 64,
+      "workload": "ordinary"
+    },
+    {
+      "accumulator": "FP32_ARRIVAL",
+      "input_format": "FP32",
+      "length": 64,
+      "workload": "ordinary"
+    },
+    {
+      "accumulator": "FP32_ORDERED",
+      "input_format": "FP32",
+      "length": 64,
+      "workload": "ordinary"
+    },
+    {
+      "accumulator": "KULISCH_FIXED",
+      "input_format": "FP32",
+      "length": 64,
+      "workload": "sensitive"
+    },
+    {
+      "accumulator": "FP32_ARRIVAL",
+      "input_format": "FP32",
+      "length": 64,
+      "workload": "sensitive"
+    },
+    {
+      "accumulator": "FP32_ORDERED",
+      "input_format": "FP32",
+      "length": 64,
+      "workload": "sensitive"
+    }
+  ],
+  "clock_period_ns": 4,
+  "command": [
+    "experiments/03-experiment-single-port-latency/.venv/bin/python3",
+    "experiments/03-experiment-single-port-latency/experiment.py",
+    "--lengths",
+    "64",
+    "--output-stall-period",
+    "5"
+  ],
+  "mtu_bytes": 1500,
+  "output_stall_period": 5,
+  "physical_ports": 1,
+  "preload_settle_cycles": 128,
+  "primary_metric": "first accepted RESULT beat minus last accepted beat of final DATA packet",
+  "provenance": {
+    "git_dirty": true,
+    "git_revision": "2f9e178b8b2052ad57acf7c3fe5fcc352129993c",
+    "platform": "Linux",
+    "python": "3.13.13",
+    "sources": {
+      "experiments/03-experiment-single-port-latency/experiment.py": "41e2d45dfc0337b70045aa7c4067a81dd15168489b6d7c25c4b05854de1cf457",
+      "experiments/03-experiment-single-port-latency/plot_latency.py": "25664a80b525d9d8e8dcf545d34f3b0c817b80c39f1991226d7a55c5178ac59d",
+      "experiments/03-experiment-single-port-latency/pyproject.toml": "6a76b98d04db2f3d16eb313c9de93cbe4d5d585f1fa3feb1732d70f24c82591a",
+      "experiments/03-experiment-single-port-latency/rtl_callback.py": "9fccfb6cd3fdaddf2fe9ba9e59995eb9821ac54d0b43b1c49555fe5e032e5246",
+      "experiments/03-experiment-single-port-latency/test_plot_latency.py": "cfc47fa349f151e95e53d999cb2d5aa33f59cb84b9622bf6106923646a2bf794",
+      "experiments/03-experiment-single-port-latency/uv.lock": "283e84b3522d118a5c15b454c861ada44a75a13eac79cf6ed620bcab9b44ad31",
+      "experiments/run/src/prism_experiments/__init__.py": "55c53e3f9174ed8289a5fc85c6aad7c8db40b1f5739919e0b5ced0378509946f",
+      "experiments/run/src/prism_experiments/artifacts.py": "147531e17dc9cc56eac6d8dfc709008c72f95d5ffbe9f8f71589d9dee77573f7",
+      "experiments/run/src/prism_experiments/rtl.py": "867c00fc6b90c6b17477c689ac2480e5ccaacdfaec9a2f9bde5f79a146dcf421",
+      "repo/prism-ccl/src/prism_ccl/__init__.py": "ee1a657468c633a9b0cccc38345e028508ba0408fcf540978b0dea95700fc971",
+      "repo/prism-ccl/src/prism_ccl/analysis/__init__.py": "052d10b87877ccde969d23d50a3d196fef9a09a5753fdca0b1d556274954ccfd",
+      "repo/prism-ccl/src/prism_ccl/analysis/mtu.py": "11cbe82c1360b2a0ce7920ac8a220653c98d2f0bf20638cbe7d3fff511fcecaa",
+      "repo/prism-ccl/src/prism_ccl/analysis/pcap.py": "0c10444663e71155e476546b051ddd9c18bf8a79ca47ad20446737700453b069",
+      "repo/prism-ccl/src/prism_ccl/application/__init__.py": "5d5da571f994ca824a15a7119ab85384c6819df6f802abb7f4cae7f994aec95c",
+      "repo/prism-ccl/src/prism_ccl/application/node.py": "a4a33d5e4a3cd246fd5b0766d799287645baddf350f79e6b6657a2e85835ce55",
+      "repo/prism-ccl/src/prism_ccl/application/packing.py": "21fff219942e167bff442149bf0db10655cc44e261f48baab241ac69c1356ec1",
+      "repo/prism-ccl/src/prism_ccl/application/reordering.py": "cd1bbb99779e09ffbf2e57e21bd5c9ce26fbd37a5e5c89afd93ba6c7c748672e",
+      "repo/prism-ccl/src/prism_ccl/application/software.py": "348cf9eb0eec77f05770c16f6243c880056f54a2fd31c383f4977ef09c560299",
+      "repo/prism-ccl/src/prism_ccl/application/window.py": "cfbf33be2aa2388f470276221aedf6221f7eddada16f3ba95b1899b0190929e6",
+      "repo/prism-ccl/src/prism_ccl/cli/__init__.py": "e7d96be66b8c389aa4218ab7f96b02d1f0eb589a8c3b64b27c38a5f0ab234e17",
+      "repo/prism-ccl/src/prism_ccl/cli/pcap_dump.py": "c518e97e6ee76b3ccc51dccd25a3d737fa8ff00395add3db70cd4ed47e443868",
+      "repo/prism-ccl/src/prism_ccl/domain/__init__.py": "3d1a4d1696cd8e71a7ce0c6e4635d9c41754ddc2f02e84ead2191886d1b19bb8",
+      "repo/prism-ccl/src/prism_ccl/domain/capabilities.py": "a5dfd2e0913d838b46091f8dad1378a3a112a53ed41b8e51764420ef64e4bd14",
+      "repo/prism-ccl/src/prism_ccl/domain/model.py": "da12b81864eb26fad4274ecbccbfa7237d295890e5aff3fd7a4cd6a8cede11ac",
+      "repo/prism-ccl/src/prism_ccl/domain/numbers.py": "7f72c69dd5c7f7d9a74906c4003ef91984ed59738228e9857c1d7666cee076d9",
+      "repo/prism-ccl/src/prism_ccl/domain/topology.py": "6619a40a9e10a8aac6e61d170c03937a93caad4ddc3948c04844807e953087c1",
+      "repo/prism-ccl/src/prism_ccl/examples.py": "f7565477701a2d519c1a4d52b1b289fdfcfa32d5d26974269413167b597160e3",
+      "repo/prism-ccl/src/prism_ccl/wire/__init__.py": "521bf2c78361739c877a3eea2acc76548d8e2f315e0149827a61ebbfc524370e",
+      "repo/prism-ccl/src/prism_ccl/wire/capabilities.py": "d514e5e1e6149db16570cb76925f610a4b8b4f2816fd3a4fe7c10d6adb9e8c5d",
+      "repo/prism-ccl/src/prism_ccl/wire/control.py": "c25ee7e12f51c47bbcdb3c5ca17038943b570d9966d785dcf52b7d2ec4ac1342",
+      "repo/prism-ccl/src/prism_ccl/wire/data.py": "c2852232844a8f0da97a276c4883afc9ea081375c51de7deb6e67929a71867cd",
+      "repo/prism-ccl/src/prism_ccl/wire/progress.py": "f2d389b86ed2c5429499d7b6b9b01467c7f1423363477a3f97a65e94002b5ef9",
+      "repo/prism-ccl/src/prism_ccl/world.py": "a790cfe500a12236b3ff4e79c62842c576b9a1466a3c3b1378b9e58817004a6f",
+      "repo/prism-hdl/verification/ccl/__init__.py": "389c6d8a2601691da5ad428a7e7353e9f5b2ff2c3d1c726c4f3f77b63f377a24",
+      "repo/prism-hdl/verification/ccl/capture.py": "353e77e0a335d15995461576e9bfa9bc3a9fcdf77e4d2d16faad99da6c9a2db1",
+      "repo/prism-hdl/verification/ccl/examples.py": "42edbf0854a7c55305adbb2f06ef3ee13e570d6c68f1db9112f82adcd6db2455",
+      "repo/prism-hdl/verification/ccl/world.py": "dfbe885bce07ccf95d9fa686a58b41a42125835f8588d667a7e0d78dfd7253d2"
+    }
+  },
+  "ranks": 8,
+  "schema_version": 1,
+  "secondary_metric": "first accepted RESULT beat minus first accepted beat of final DATA packet",
+  "seed": 7,
+  "status": "complete"
+}

@@ -1,0 +1,40 @@
+[project]
+name = "prism-ccl"
+version = "2.0.0"
+description = "PRISM NumberGroup protocol and packet-level collective scenarios"
+license = "Apache-2.0"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+prism-pcap = "prism_ccl.cli.pcap_dump:main"
+prism-single = "prism_ccl.cli.single_run:main"
+
+[dependency-groups]
+dev = [
+    "coverage==7.10.6",
+    "mypy==1.17.1",
+    "pytest==8.4.1",
+    "ruff==0.12.11",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+packages = ["prism_ccl"]
+mypy_path = "src"
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["uv_build>=0.11.2,<0.12.0"]
+build-backend = "uv_build"

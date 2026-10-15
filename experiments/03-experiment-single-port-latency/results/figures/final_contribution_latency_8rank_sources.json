@@ -1,0 +1,12 @@
+{
+  "backpressure_check_run": "build/experiments/03-experiment-single-port-latency/20260927T145457Z-168b0f37",
+  "clock_period_ns": 4,
+  "comparison_limit": "EPIC gives no payload size or element count for the 230 ns latency and does not specify which beat marks final-packet arrival. FPGA and timing closure differ. The one-port PRISM datapath is distinct from its two-port wide path. EPIC's 250 MHz result refers to a separate VU13P design.",
+  "epic_configuration": "Mode-II, eight ranks, Intel Agilex, RTL simulation",
+  "epic_reference_ns_approx": 230,
+  "epic_source": "https://arxiv.org/html/2605.18683v2#appendix.K",
+  "primary_run": "build/experiments/03-experiment-single-port-latency/20260927T145347Z-7b1ea57f",
+  "prism_metric": "last accepted beat of final DATA to first accepted RESULT beat",
+  "rtl_build_id": "3f6f1f3c542624538eb1c68a728524495183dfb1acc2bb82890a96d3bc148bb5",
+  "settle_check_run": "build/experiments/03-experiment-single-port-latency/20260927T145424Z-0f183645"
+}
