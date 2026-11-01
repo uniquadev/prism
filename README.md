@@ -83,6 +83,12 @@ You can preview the documentation locally with:
 make docs-serve
 ```
 
+## Support ☕
+
+PRISM is open research. If it is useful for your work or studies, you can support its continued development with a coffee.
+
+<a href="https://buymeacoffee.com/uniqua"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="48"></a>
+
 ## License
 
 PRISM is released under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE).
