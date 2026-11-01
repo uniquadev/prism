@@ -10,12 +10,12 @@ capitolo di valutazione della tesi.
 <div class="results-highlight" markdown="1">
 
 <span class="results-highlight__label">Simulazione RTL</span>
-<span class="results-highlight__value">110,5 Gbit/s</span>
+<span class="results-highlight__value">≥ 100 Gbit/s</span>
 
-Throughput aggregato dei frame RESULT con ingressi FP32 e uscita AUTO, su due
-porte con periodo simulato di 4 ns.
+Su ogni ingresso e ogni uscita del profilo U280, per tutte le 24 coppie di
+formati; il flusso più lento, DATA FP32, sostiene 100,98 Gbit/s.
 
-[Prestazioni →](performance.md)
+[Prestazioni →](performance.md#velocita-di-linea-del-profilo-u280)
 
 </div>
 
@@ -37,9 +37,9 @@ al Kulisch uniforme, nei quattro vettori valutati.
 <span class="results-highlight__value">40,64% LUT</span>
 
 Occupazione post-route della build a una porta per la scheda U280, che rispetta
-i vincoli di timing a 250 MHz; il profilo esclude il percorso FP32 di arrivo.
+i vincoli di timing a 250 MHz con una stima di 13,6 W sul chip.
 
-[Risorse →](resources.md)
+[Implementazione →](resources.md)
 
 </div>
 
@@ -49,15 +49,16 @@ i vincoli di timing a 250 MHz; il profilo esclude il percorso FP32 di arrivo.
 
 | Sezione | Contenuto |
 | --- | --- |
-| [Prestazioni](performance.md) | Throughput DATA e RESULT, tempo di risposta AllReduce e latenza dell'ultimo contributo. |
+| [Prestazioni](performance.md) | Throughput DATA e RESULT, tempo di risposta AllReduce, latenza dell'ultimo contributo e velocità di linea del profilo U280. |
 | [Traffico](traffic.md) | Risparmio di pacchetti con AUTO e compressione dei superaccumulatori nei diversi carichi. |
-| [Risorse](resources.md) | Occupazione post-route della build per la scheda U280 e configurazione del suo profilo. |
+| [Implementazione](resources.md) | Timing, placement, occupazione e potenza della build per la scheda U280. |
 
 Le prestazioni provengono dalla simulazione RTL. La compressione è uno studio
 software di un'estensione proposta per il protocollo. Le risorse provengono dai
 report di implementazione FPGA. Throughput sulla scheda, potenza e funzionamento
 multi-switch rientrano negli [sviluppi hardware](../5-future-works/hardware.md).
 
-I sei grafici sono quelli della tesi, disponibili qui in formato vettoriale
-ingrandibile in italiano e inglese. Accanto a ogni figura sono riportate la
+I grafici sono quelli della tesi, disponibili qui in formato vettoriale
+ingrandibile in italiano e inglese, più il bilancio di LUT e potenza della build
+della scheda. Accanto a ogni figura sono riportate la
 configurazione e le convenzioni di misura.

@@ -1,0 +1,115 @@
+{
+  "build": {
+    "release": "v1.0.0",
+    "tool": "Vivado 2022.1",
+    "date": "2026-10-15",
+    "top": "prism_u280_top",
+    "profile": "one 100G port (CMAC + OpenNIC packet adapter), 280-bit Kulisch, four exact banks, no FP32 path",
+    "clock_mhz": 250,
+    "rs_fec": true,
+    "source": "make u280 (RS-FEC on), post_route_physopt reports of the published bitstream"
+  },
+  "timing": {
+    "wns_ns": 0.005,
+    "whs_ns": 0.0,
+    "failing_endpoints": 0,
+    "setup_endpoints": 1232927,
+    "hold_endpoints": 1232899,
+    "wns_rs_fec_off_ns": 0.01,
+    "source": "timing_summary.rpt; the RS-FEC-off value from the second published bitstream"
+  },
+  "utilization": {
+    "lut": {
+      "used": 529840,
+      "device": 1303680,
+      "share": 40.64,
+      "slr1": 62.95,
+      "slr2": 59.7
+    },
+    "register": {
+      "used": 542583,
+      "device": 2607360,
+      "share": 20.81,
+      "slr1": 38.78,
+      "slr2": 24.02
+    },
+    "bram_tile": {
+      "used": 281,
+      "device": 2016,
+      "share": 13.94,
+      "slr1": 38.1,
+      "slr2": 3.72
+    },
+    "dsp": {
+      "used": 2,
+      "device": 9024,
+      "share": 0.02,
+      "slr1": 0.07,
+      "slr2": 0.0
+    },
+    "slr0_used": false,
+    "slr_crossings": {
+      "used": 13984,
+      "available": 23040,
+      "share": 60.69
+    },
+    "source": "utilization.rpt"
+  },
+  "lut_by_block": {
+    "output_auto_numbergroup": 361980,
+    "kulisch_arithmetic": 135517,
+    "receive_and_control": 13843,
+    "port_100g": 9932,
+    "other": 8568,
+    "prism_core": 519855,
+    "note": "Kulisch = striped exact banks (95,308) + final rounding (40,209); receive and control = receiver (5,944) + tile buffer (4,628) + control (3,271); 100G port = CMAC subsystem (9,221) + packet adapter (711); other = the remaining LUTs of the design.",
+    "source": "utilization_hierarchical.rpt"
+  },
+  "power_w": {
+    "total": 13.612,
+    "dynamic": 10.197,
+    "static": 3.415,
+    "junction_c": 30.9,
+    "prism_core": 6.655,
+    "port_100g": 3.451,
+    "other": 0.092,
+    "clocks": 3.799,
+    "clb_logic": 0.9,
+    "signals": 1.085,
+    "bram": 1.575,
+    "gty": 2.322,
+    "note": "Vectorless estimate, report_power on the routed checkpoint, 25 C ambient.",
+    "source": "report_power and report_power -hier on the routed checkpoint"
+  },
+  "line_rate": {
+    "clock_ns": 4,
+    "data_numeric_gbps": {
+      "INT8": 103.7,
+      "FP16": 102.08,
+      "BF16": 102.08,
+      "FP32": 100.98
+    },
+    "result_numeric_gbps": {
+      "native": 122.27,
+      "AUTO": 122.27,
+      "KULISCH": 121.26
+    },
+    "result_axi_gbps": {
+      "native": 127.64,
+      "KULISCH": 127.58
+    },
+    "sparse_auto_axi_gbps": {
+      "0": 126.18,
+      "17": 120.31,
+      "40": 120.13,
+      "16,33,50": 105.61,
+      "15,16,47,48": 125.72,
+      "0,16,32,48": 121.03,
+      "16,32,48": 105.61,
+      "16,32,63": 103.97
+    },
+    "ethernet_100g_frame_gbps": 98.4,
+    "note": "Verilator, regression run on the release RTL before the bitstream build. DATA and RESULT: rtl-u280-profile, two ranks on one port, 4096 elements, all 24 input/output pairs. Sparse AUTO: rtl-result-wide-target, 64 INT8 lanes per tile with 280-bit exact values at the listed lanes; lanes 16, 32, 63 is the worst tile found by exhaustive search.",
+    "source": "logs of make test SUITE=rtl-u280-profile and SUITE=rtl-result-wide-target"
+  }
+}

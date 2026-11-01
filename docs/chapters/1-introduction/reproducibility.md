@@ -84,6 +84,16 @@ where \(p\) is the significand precision including the hidden bit, \(M\) is the 
 
 A Kulisch-style scalar-sum accumulator chooses this smallest unit as its fixed-point least significant bit. Each incoming floating-point operand is deposited into the corresponding fixed-point position. Since the intermediate representation is exact integer state, adding two deposits is associative and commutative up to the capacity of the accumulator. The final floating-point result is produced by normalizing the exact integer sum and rounding once according to the selected rounding mode.
 
+<figure id="fig-kulisch-register" markdown="span">
+
+![1 and 2⁻²⁴ as the integers 2¹⁴⁹ and 2¹²⁵ in the same FP32 Kulisch register.](../../assets/images/architecture/kulisch-register-en.svg){ loading=lazy }
+
+<figcaption>For FP32, \(q=2^{-149}\): 1 becomes \(2^{149}\) and
+\(\varepsilon=2^{-24}\) becomes \(2^{125}\), at different positions of the
+278-bit value field. Integer addition gives \(\varepsilon\) in any order. The
+\(\lceil\log_2 R\rceil\) carry bits are not drawn.</figcaption>
+</figure>
+
 This gives a clean separation between network timing and arithmetic semantics:
 
 \[

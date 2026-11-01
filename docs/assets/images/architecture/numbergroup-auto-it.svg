@@ -1,0 +1,393 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="669.6pt" height="280.8pt" viewBox="0 0 669.6 280.8" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-11-01T10:57:14.998291</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 280.8 
+L 669.6 280.8 
+L 669.6 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 108 46.8 
+L 190.8 46.8 
+L 190.8 15.12 
+L 108 15.12 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #ffffff; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 190.8 46.8 
+L 273.6 46.8 
+L 273.6 15.12 
+L 190.8 15.12 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #ffffff; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 273.6 46.8 
+L 356.4 46.8 
+L 356.4 15.12 
+L 273.6 15.12 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #e5eef3; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 356.4 46.8 
+L 439.2 46.8 
+L 439.2 15.12 
+L 356.4 15.12 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #ffffff; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 439.2 46.8 
+L 522 46.8 
+L 522 15.12 
+L 439.2 15.12 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #ffffff; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 10.8 136.8 
+L 21.667925 136.8 
+L 21.667925 106.56 
+L 10.8 106.56 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #202020; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 21.667925 136.8 
+L 133.064151 136.8 
+L 133.064151 106.56 
+L 21.667925 106.56 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #d9d9d6; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 133.064151 136.8 
+L 244.460377 136.8 
+L 244.460377 106.56 
+L 133.064151 106.56 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #d9d9d6; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 244.460377 136.8 
+L 355.856604 136.8 
+L 355.856604 106.56 
+L 244.460377 106.56 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #d9d9d6; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 355.856604 136.8 
+L 467.25283 136.8 
+L 467.25283 106.56 
+L 355.856604 106.56 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #d9d9d6; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 467.25283 136.8 
+L 578.649057 136.8 
+L 578.649057 106.56 
+L 467.25283 106.56 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #d9d9d6; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_13">
+    <path d="M 578.649057 136.8 
+L 586.8 136.8 
+L 586.8 106.56 
+L 578.649057 106.56 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #f3f3f1; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 10.8 136.8 
+L 586.8 136.8 
+L 586.8 106.56 
+L 10.8 106.56 
+L 10.8 136.8 
+z
+" clip-path="url(#peec2281a2d)" style="fill: none; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_15">
+    <path d="M 10.8 214.56 
+L 21.667925 214.56 
+L 21.667925 184.32 
+L 10.8 184.32 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #202020; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_16">
+    <path d="M 21.667925 214.56 
+L 32.535849 214.56 
+L 32.535849 184.32 
+L 21.667925 184.32 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #185d78; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_17">
+    <path d="M 32.535849 214.56 
+L 43.403774 214.56 
+L 43.403774 184.32 
+L 32.535849 184.32 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #185d78; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_18">
+    <path d="M 43.403774 214.56 
+L 54.271698 214.56 
+L 54.271698 184.32 
+L 43.403774 184.32 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #202020; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_19">
+    <path d="M 54.271698 214.56 
+L 165.667925 214.56 
+L 165.667925 184.32 
+L 54.271698 184.32 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #d9d9d6; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_20">
+    <path d="M 165.667925 214.56 
+L 173.818868 214.56 
+L 173.818868 184.32 
+L 165.667925 184.32 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #f3f3f1; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_21">
+    <path d="M 173.818868 214.56 
+L 184.686792 214.56 
+L 184.686792 184.32 
+L 173.818868 184.32 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #202020; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_22">
+    <path d="M 184.686792 214.56 
+L 195.554717 214.56 
+L 195.554717 184.32 
+L 184.686792 184.32 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #185d78; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_23">
+    <path d="M 195.554717 214.56 
+L 206.422642 214.56 
+L 206.422642 184.32 
+L 195.554717 184.32 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #185d78; stroke: #ffffff; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_24">
+    <path d="M 10.8 214.56 
+L 206.422642 214.56 
+L 206.422642 184.32 
+L 10.8 184.32 
+L 10.8 214.56 
+z
+" clip-path="url(#peec2281a2d)" style="fill: none; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_25">
+    <path d="M 10.8 275.04 
+L 25.2 275.04 
+L 25.2 260.64 
+L 10.8 260.64 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #202020; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_26">
+    <path d="M 176.4 275.04 
+L 190.8 275.04 
+L 190.8 260.64 
+L 176.4 260.64 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #d9d9d6; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_27">
+    <path d="M 342 275.04 
+L 356.4 275.04 
+L 356.4 260.64 
+L 342 260.64 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #185d78; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_28">
+    <path d="M 507.6 275.04 
+L 522 275.04 
+L 522 260.64 
+L 507.6 260.64 
+z
+" clip-path="url(#peec2281a2d)" style="fill: #f3f3f1; stroke: #202020; stroke-width: 1.65; stroke-linejoin: miter"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 12.24 220.32 
+L 12.24 224.64 
+L 41.963774 224.64 
+L 41.963774 220.32 
+" clip-path="url(#peec2281a2d)" style="fill: none; stroke: #202020; stroke-width: 1.3; stroke-linejoin: miter"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 44.843774 220.32 
+L 44.843774 224.64 
+L 172.378868 224.64 
+L 172.378868 220.32 
+" clip-path="url(#peec2281a2d)" style="fill: none; stroke: #202020; stroke-width: 1.3; stroke-linejoin: miter"/>
+   </g>
+   <g id="line2d_3">
+    <path d="M 175.258868 220.32 
+L 175.258868 224.64 
+L 204.982642 224.64 
+L 204.982642 220.32 
+" clip-path="url(#peec2281a2d)" style="fill: none; stroke: #202020; stroke-width: 1.3; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-size: 12px; font-family: 'Times New Roman'; text-anchor: start; fill: #202020" x="10.8" y="33.825234" transform="rotate(-0 10.8 33.825234)">Somme</text>
+   </g>
+   <g id="text_2">
+    <!-- $y_0$ -->
+    <g style="fill: #202020" transform="translate(143.94 34.064004)">
+     <text>
+      <tspan x="0" y="-0.265625" style="font-style: italic; font-size: 13px; font-family: 'STIXGeneral'; fill: #202020">y</tspan>
+      <tspan x="5.772003" y="1.684375" style="font-size: 9.1px; font-family: 'STIXGeneral'; fill: #202020">0</tspan>
+     </text>
+    </g>
+   </g>
+   <g id="text_3">
+    <text style="font-size: 10px; font-family: 'Times New Roman'; text-anchor: middle; fill: #666666" x="149.4" y="62.867695" transform="rotate(-0 149.4 62.867695)">FP32</text>
+   </g>
+   <g id="text_4">
+    <!-- $y_1$ -->
+    <g style="fill: #202020" transform="translate(226.74 34.064004)">
+     <text>
+      <tspan x="0" y="-0.265625" style="font-style: italic; font-size: 13px; font-family: 'STIXGeneral'; fill: #202020">y</tspan>
+      <tspan x="5.772003" y="1.684375" style="font-size: 9.1px; font-family: 'STIXGeneral'; fill: #202020">1</tspan>
+     </text>
+    </g>
+   </g>
+   <g id="text_5">
+    <text style="font-size: 10px; font-family: 'Times New Roman'; text-anchor: middle; fill: #666666" x="232.2" y="62.867695" transform="rotate(-0 232.2 62.867695)">FP32</text>
+   </g>
+   <g id="text_6">
+    <!-- $1+\varepsilon$ -->
+    <g style="fill: #202020" transform="translate(301.805 34.064004)">
+     <text>
+      <tspan x="0" y="-0.21875" style="font-size: 13px; font-family: 'STIXGeneral'; fill: #202020">1</tspan>
+      <tspan x="9.1" y="-0.21875" style="font-size: 13px; font-family: 'STIXGeneral'; fill: #202020">+</tspan>
+      <tspan x="20.605014" y="-0.21875" style="font-style: italic; font-size: 13px; font-family: 'STIXGeneral'; fill: #202020">ε</tspan>
+     </text>
+    </g>
+   </g>
+   <g id="text_7">
+    <text style="font-size: 10px; font-family: 'Times New Roman'; text-anchor: middle; fill: #185d78" x="315" y="62.872773" transform="rotate(-0 315 62.872773)">Kulisch</text>
+   </g>
+   <g id="text_8">
+    <!-- $y_3$ -->
+    <g style="fill: #202020" transform="translate(392.34 34.064004)">
+     <text>
+      <tspan x="0" y="-0.265625" style="font-style: italic; font-size: 13px; font-family: 'STIXGeneral'; fill: #202020">y</tspan>
+      <tspan x="5.772003" y="1.684375" style="font-size: 9.1px; font-family: 'STIXGeneral'; fill: #202020">3</tspan>
+     </text>
+    </g>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 10px; font-family: 'Times New Roman'; text-anchor: middle; fill: #666666" x="397.8" y="62.867695" transform="rotate(-0 397.8 62.867695)">FP32</text>
+   </g>
+   <g id="text_10">
+    <!-- $y_4$ -->
+    <g style="fill: #202020" transform="translate(475.14 34.064004)">
+     <text>
+      <tspan x="0" y="-0.265625" style="font-style: italic; font-size: 13px; font-family: 'STIXGeneral'; fill: #202020">y</tspan>
+      <tspan x="5.772003" y="1.684375" style="font-size: 9.1px; font-family: 'STIXGeneral'; fill: #202020">4</tspan>
+     </text>
+    </g>
+   </g>
+   <g id="text_11">
+    <text style="font-size: 10px; font-family: 'Times New Roman'; text-anchor: middle; fill: #666666" x="480.6" y="62.867695" transform="rotate(-0 480.6 62.867695)">FP32</text>
+   </g>
+   <g id="text_12">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'Times New Roman'; text-anchor: start; fill: #202020" x="10.8" y="96.371953" transform="rotate(-0 10.8 96.371953)">Kulisch uniforme</text>
+   </g>
+   <g id="text_13">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: middle; fill: #202020" x="77.366038" y="124.18708" transform="rotate(-0 77.366038 124.18708)">41 B</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: middle; fill: #202020" x="188.762264" y="124.18708" transform="rotate(-0 188.762264 124.18708)">41 B</text>
+   </g>
+   <g id="text_15">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: middle; fill: #202020" x="300.158491" y="124.18708" transform="rotate(-0 300.158491 124.18708)">41 B</text>
+   </g>
+   <g id="text_16">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: middle; fill: #202020" x="411.554717" y="124.18708" transform="rotate(-0 411.554717 124.18708)">41 B</text>
+   </g>
+   <g id="text_17">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: middle; fill: #202020" x="522.950943" y="124.18708" transform="rotate(-0 522.950943 124.18708)">41 B</text>
+   </g>
+   <g id="text_18">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'Times New Roman'; text-anchor: end; fill: #202020" x="586.8" y="96.368555" transform="rotate(-0 586.8 96.368555)">212 B</text>
+   </g>
+   <g id="text_19">
+    <text style="font-weight: 700; font-size: 12px; font-family: 'Times New Roman'; text-anchor: start; fill: #185d78" x="10.8" y="174.131953" transform="rotate(-0 10.8 174.131953)">NumberGroup AUTO</text>
+   </g>
+   <g id="text_20">
+    <text style="font-size: 10px; font-family: 'Times New Roman'; text-anchor: middle; fill: #202020" x="27.101887" y="238.547695" transform="rotate(-0 27.101887 238.547695)">FP32 ×2</text>
+   </g>
+   <g id="text_21">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: middle; fill: #202020" x="109.969811" y="201.94708" transform="rotate(-0 109.969811 201.94708)">41 B</text>
+   </g>
+   <g id="text_22">
+    <text style="font-size: 10px; font-family: 'Times New Roman'; text-anchor: middle; fill: #202020" x="108.611321" y="238.552773" transform="rotate(-0 108.611321 238.552773)">Kulisch ×1</text>
+   </g>
+   <g id="text_23">
+    <text style="font-size: 10px; font-family: 'Times New Roman'; text-anchor: middle; fill: #202020" x="190.120755" y="238.547695" transform="rotate(-0 190.120755 238.547695)">FP32 ×2</text>
+   </g>
+   <g id="text_24">
+    <text style="font-weight: 700; font-size: 16px; font-family: 'Times New Roman'; text-anchor: start; fill: #185d78" x="224.422642" y="203.131406" transform="rotate(-0 224.422642 203.131406)">72 B</text>
+   </g>
+   <g id="text_25">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: start; fill: #202020" x="32.4" y="270.352412" transform="rotate(-0 32.4 270.352412)">descrittore, 4 B</text>
+   </g>
+   <g id="text_26">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: start; fill: #202020" x="198" y="270.352412" transform="rotate(-0 198 270.352412)">valore Kulisch, 41 B</text>
+   </g>
+   <g id="text_27">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: start; fill: #202020" x="363.6" y="270.352412" transform="rotate(-0 363.6 270.352412)">valore FP32, 4 B</text>
+   </g>
+   <g id="text_28">
+    <text style="font-size: 10.5px; font-family: 'Times New Roman'; text-anchor: start; fill: #202020" x="529.2" y="270.352412" transform="rotate(-0 529.2 270.352412)">padding, 3 B</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="peec2281a2d">
+   <rect x="0" y="0" width="669.6" height="280.8"/>
+  </clipPath>
+ </defs>
+</svg>

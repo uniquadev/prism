@@ -103,7 +103,7 @@ plugins:
             "4. Results": "4. Risultati"
             "4.1 Performance": "4.1 Prestazioni"
             "4.2 Traffic": "4.2 Traffico"
-            "4.3 Resources": "4.3 Risorse"
+            "4.3 Implementation": "4.3 Implementazione"
             "5. Future Works": "5. Sviluppi futuri"
             "5.1 Hardware": "5.1 Hardware"
             "5.2 Protocol": "5.2 Protocollo"
@@ -153,7 +153,7 @@ nav:
       - chapters/4-results/index.md
       - "4.1 Performance": chapters/4-results/performance.md
       - "4.2 Traffic": chapters/4-results/traffic.md
-      - "4.3 Resources": chapters/4-results/resources.md
+      - "4.3 Implementation": chapters/4-results/resources.md
   - "5. Future Works":
     - chapters/5-future-works/index.md
     - "5.1 Hardware": chapters/5-future-works/hardware.md

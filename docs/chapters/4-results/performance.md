@@ -2,7 +2,10 @@
 
 The SINGLE datapath is evaluated in RTL simulation with a 4 ns period.
 Throughput and AllReduce response use two ranks on separate ports;
-final-contribution latency uses eight ranks on one full-duplex port.
+final-contribution latency uses eight ranks on one full-duplex port. These
+first four sections use the two-port core with both arithmetic paths; the
+[last section](#line-rate-of-the-u280-profile) repeats the rate measurements
+on the released one-port U280 profile.
 
 ## DATA throughput
 
@@ -77,6 +80,36 @@ specify the vector length or the starting beat of the measurement.</figcaption>
 reference for eight FP32 ranks on Agilex. The missing measurement details and
 different platform limit it to contextual comparison.
 
+## Line rate of the U280 profile
+
+The [released build](resources.md) has one port, 280-bit Kulisch in four exact
+banks, and no FP32 path. Its requirement is **at least 100 Gbit/s on every
+input and output**, measured per stream from the first to the last accepted
+beat. The test runs two ranks on one port with 4096 elements each, for all 24
+pairs of four input formats and six output policies, and checks every value.
+
+- DATA payload: **103.70 Gbit/s** for INT8, 102.08 for FP16/BF16, and **100.98**
+  for FP32, which needs the most frames and pays about four admission cycles
+  per frame.
+- RESULT payload: **122.27 Gbit/s** for native and AUTO results, 121.26 for
+  Kulisch, whatever the input format.
+- AUTO with a few exact values among INT8 results, the hardest output case:
+  **103.97–126.18 Gbit/s** of frame bytes over eight tiles. The slowest, with
+  exact values at lanes 16, 32 and 63, is the worst tile an exhaustive search
+  found among tiles with up to four exact values.
+
+A 100 GbE link carries at most 98.4 Gbit/s of frame bytes with 1514-byte
+frames, so the core outpaces its port in every measured case.
+
+<figure id="fig-u280-line-rate" class="results-figure" markdown="span">
+
+![Sustained per-stream rates of the U280 profile against the 100 Gbit/s requirement.](../../assets/images/evaluation/u280_line_rate-en.svg){ loading=lazy }
+
+<figcaption>Slowest measured case of each stream: RTL simulation, 4 ns period,
+280-bit Kulisch, all 24 format pairs. DATA and RESULT count numeric payload; the
+sparse AUTO bar counts AXI frame bytes of the worst of eight tiles.</figcaption>
+</figure>
+
 ??? info "Evidence sources"
 
     The figures are copied from the thesis evaluation assets. Throughput uses
@@ -85,6 +118,9 @@ different platform limit it to contextual comparison.
     Response and final-contribution figures use the online-arrival runs under
     `build/experiments/fp32-arrival-online/`, with the latency source record in
     the thesis asset `final_contribution_latency_8rank_sources.json`.
+    U280 profile rates come from the regression of commit `812a183`, suites
+    `rtl-u280-profile` and `rtl-result-wide-target`; the values and the plotting
+    script are in `experiments/05-experiment-u280-release/`.
 
 On-board performance and longer or multi-switch collectives require
 [further measurements](../5-future-works/hardware.md).

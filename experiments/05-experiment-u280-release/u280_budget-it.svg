@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="415.385859pt" height="175.381566pt" viewBox="0 0 415.385859 175.381566" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-11-01T11:12:51.819514</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 175.381566 
+L 415.385859 175.381566 
+L 415.385859 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 38.03625 108.216 
+L 395.15625 108.216 
+L 395.15625 2.88 
+L 38.03625 2.88 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 38.03625 47.840488 
+L 282.016126 47.840488 
+L 282.016126 19.57961 
+L 38.03625 19.57961 
+z
+" clip-path="url(#p4d8762b0cf)" style="fill: #185d78; stroke: #ffffff; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 282.016126 47.840488 
+L 373.356589 47.840488 
+L 373.356589 19.57961 
+L 282.016126 19.57961 
+z
+" clip-path="url(#p4d8762b0cf)" style="fill: #6f98ac; stroke: #ffffff; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 373.356589 47.840488 
+L 382.686976 47.840488 
+L 382.686976 19.57961 
+L 373.356589 19.57961 
+z
+" clip-path="url(#p4d8762b0cf)" style="fill: #b5c9d3; stroke: #ffffff; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 382.686976 47.840488 
+L 389.381291 47.840488 
+L 389.381291 19.57961 
+L 382.686976 19.57961 
+z
+" clip-path="url(#p4d8762b0cf)" style="fill: #9a9a96; stroke: #ffffff; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 389.381291 47.840488 
+L 395.15625 47.840488 
+L 395.15625 19.57961 
+L 389.381291 19.57961 
+z
+" clip-path="url(#p4d8762b0cf)" style="fill: #d9d9d6; stroke: #ffffff; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 38.03625 99.223902 
+L 127.631078 99.223902 
+L 127.631078 70.963024 
+L 38.03625 70.963024 
+z
+" clip-path="url(#p4d8762b0cf)" style="fill: #d9d9d6; stroke: #ffffff; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 127.631078 99.223902 
+L 302.229491 99.223902 
+L 302.229491 70.963024 
+L 127.631078 70.963024 
+z
+" clip-path="url(#p4d8762b0cf)" style="fill: #185d78; stroke: #ffffff; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 302.229491 99.223902 
+L 392.768804 99.223902 
+L 392.768804 70.963024 
+L 302.229491 70.963024 
+z
+" clip-path="url(#p4d8762b0cf)" style="fill: #9a9a96; stroke: #ffffff; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 392.768804 99.223902 
+L 395.182486 99.223902 
+L 395.182486 70.963024 
+L 392.768804 70.963024 
+z
+" clip-path="url(#p4d8762b0cf)" style="fill: #ededea; stroke: #ffffff; stroke-linejoin: miter"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_1">
+      <defs>
+       <path id="m3e7b3e87bc" d="M 0 0 
+L 0 3.5 
+" style="stroke: #000000; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#m3e7b3e87bc" x="38.03625" y="108.216" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_1">
+      <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle" x="38.03625" y="121.456234" transform="rotate(-0 38.03625 121.456234)">0%</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_2">
+      <g>
+       <use xlink:href="#m3e7b3e87bc" x="127.31625" y="108.216" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_2">
+      <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle" x="127.31625" y="121.456234" transform="rotate(-0 127.31625 121.456234)">25%</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_3">
+      <g>
+       <use xlink:href="#m3e7b3e87bc" x="216.59625" y="108.216" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_3">
+      <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle" x="216.59625" y="121.456234" transform="rotate(-0 216.59625 121.456234)">50%</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_4">
+      <g>
+       <use xlink:href="#m3e7b3e87bc" x="305.87625" y="108.216" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_4">
+      <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle" x="305.87625" y="121.456234" transform="rotate(-0 305.87625 121.456234)">75%</text>
+     </g>
+    </g>
+    <g id="xtick_5">
+     <g id="line2d_5">
+      <g>
+       <use xlink:href="#m3e7b3e87bc" x="395.15625" y="108.216" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_5">
+      <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle" x="395.15625" y="121.456234" transform="rotate(-0 395.15625 121.456234)">100%</text>
+     </g>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_6"/>
+     <g id="text_6">
+      <text style="font-size: 10px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: end" x="34.53625" y="37.176846" transform="rotate(-0 34.53625 37.176846)">LUT</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_7"/>
+     <g id="text_7">
+      <text style="font-size: 10px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: end" x="34.53625" y="88.56026" transform="rotate(-0 34.53625 88.56026)">Potenza</text>
+     </g>
+    </g>
+   </g>
+   <g id="patch_12">
+    <path d="M 38.03625 108.216 
+L 395.15625 108.216 
+" style="fill: none; stroke: #000000; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 9.5px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle; fill: #ffffff" x="160.026188" y="35.978359" transform="rotate(-0 160.026188 35.978359)">68%</text>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 9.5px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle; fill: #ffffff" x="327.686358" y="35.978359" transform="rotate(-0 327.686358 35.978359)">26%</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 9.5px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle; fill: #202020" x="82.833664" y="87.366598" transform="rotate(-0 82.833664 87.366598)">statica 3,4 W</text>
+   </g>
+   <g id="text_11">
+    <text style="font-size: 9.5px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle; fill: #ffffff" x="214.930285" y="87.361774" transform="rotate(-0 214.930285 87.361774)">core PRISM 6,7 W</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 9.5px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: middle; fill: #202020" x="347.499147" y="87.361774" transform="rotate(-0 347.499147 87.361774)">porta 100G 3,5 W</text>
+   </g>
+   <g id="text_13">
+    <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: end; fill: #666666" x="395.15625" y="12.129015" transform="rotate(-0 395.15625 12.129015)">529.840 LUT, il 40,6% del dispositivo</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: end; fill: #666666" x="395.15625" y="63.512429" transform="rotate(-0 395.15625 63.512429)">13,6 W stimati sul chip</text>
+   </g>
+   <g id="legend_1">
+    <g id="patch_13">
+     <path d="M 24.286641 154.2168 
+L 35.086641 154.2168 
+L 35.086641 147.9168 
+L 24.286641 147.9168 
+z
+" style="fill: #185d78; stroke: #185d78; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_15">
+     <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: start" x="42.286641" y="154.2168" transform="rotate(-0 42.286641 154.2168)">Uscita: AUTO e NumberGroup</text>
+    </g>
+    <g id="patch_14">
+     <path d="M 24.286641 166.959183 
+L 35.086641 166.959183 
+L 35.086641 160.659183 
+L 24.286641 160.659183 
+z
+" style="fill: #6f98ac; stroke: #6f98ac; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_16">
+     <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: start" x="42.286641" y="166.959183" transform="rotate(-0 42.286641 166.959183)">Somma esatta (Kulisch)</text>
+    </g>
+    <g id="patch_15">
+     <path d="M 166.150547 154.2168 
+L 176.950547 154.2168 
+L 176.950547 147.9168 
+L 166.150547 147.9168 
+z
+" style="fill: #b5c9d3; stroke: #b5c9d3; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_17">
+     <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: start" x="184.150547" y="154.2168" transform="rotate(-0 184.150547 154.2168)">Ricezione e controllo</text>
+    </g>
+    <g id="patch_16">
+     <path d="M 166.150547 166.959183 
+L 176.950547 166.959183 
+L 176.950547 160.659183 
+L 166.150547 160.659183 
+z
+" style="fill: #9a9a96; stroke: #9a9a96; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_18">
+     <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: start" x="184.150547" y="166.959183" transform="rotate(-0 184.150547 166.959183)">Porta 100G (CMAC, adattatore OpenNIC)</text>
+    </g>
+    <g id="patch_17">
+     <path d="M 348.172734 154.2168 
+L 358.972734 154.2168 
+L 358.972734 147.9168 
+L 348.172734 147.9168 
+z
+" style="fill: #d9d9d6; stroke: #d9d9d6; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_19">
+     <text style="font-size: 9px; font-family: 'Times New Roman', 'Times', 'Nimbus Roman', 'STIXGeneral', serif; text-anchor: start" x="366.172734" y="154.2168" transform="rotate(-0 366.172734 154.2168)">Altra logica</text>
+    </g>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p4d8762b0cf">
+   <rect x="38.03625" y="2.88" width="357.12" height="105.336"/>
+  </clipPath>
+ </defs>
+</svg>

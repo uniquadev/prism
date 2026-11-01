@@ -112,6 +112,16 @@ corrispondente; la rappresentazione intermedia intera rende la somma associativa
 e commutativa entro la capacità dell'accumulatore. Il risultato floating-point
 si ottiene normalizzando la somma esatta e arrotondandola una sola volta.
 
+<figure id="fig-kulisch-register" markdown="span">
+
+![1 e 2⁻²⁴ come interi 2¹⁴⁹ e 2¹²⁵ nello stesso registro Kulisch FP32.](../../assets/images/architecture/kulisch-register-it.svg){ loading=lazy }
+
+<figcaption>Per FP32, \(q=2^{-149}\): 1 diventa \(2^{149}\) e
+\(\varepsilon=2^{-24}\) diventa \(2^{125}\), in posizioni diverse del campo di
+278 bit. La somma tra interi dà \(\varepsilon\) in qualunque ordine. I bit di
+riporto, \(\lceil\log_2 R\rceil\), non sono disegnati.</figcaption>
+</figure>
+
 Si ottiene così una separazione netta tra timing di rete e semantica aritmetica:
 
 \[
